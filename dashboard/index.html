@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Radar — Pre-token protocols, ranked by implied value</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="scanline" aria-hidden="true"></div>
+<header class="top">
+  <div class="brand">
+    <span class="pulse" aria-hidden="true"></span>
+    <div>
+      <div class="brand-name">TOKEN RADAR</div>
+      <div class="brand-sub">pre-token protocol board</div>
+    </div>
+  </div>
+  <dl class="top-meta">
+    <div><dt>Snapshot</dt><dd id="meta-date">—</dd></div>
+    <div><dt>Model</dt><dd>radar-2</dd></div>
+    <div><dt>Source</dt><dd>DefiLlama protocol index</dd></div>
+  </dl>
+</header>
+
+<main class="shell">
+  <section class="lede">
+    <div>
+      <p class="kicker">40 watchlist protocols at &ge;$50M TVL with no token on record, plus 160 early pre-token protocols below the floor, ranked by implied launch value from a comparables model.</p>
+      <p class="lede-note">Implied value is what the market already pays per dollar of TVL in the same category — not a price, and not a promise of a token.</p>
+    </div>
+    <dl class="facts">
+      <div class="fact"><dt>Watchlist covered</dt><dd id="stat-watch">40 / 40</dd></div>
+      <div class="fact"><dt>Board rows</dt><dd id="stat-rows">200</dd></div>
+      <div class="fact"><dt>Early rows</dt><dd id="stat-early">160</dd></div>
+      <div class="fact"><dt>Live-token set aside</dt><dd id="stat-live">24</dd></div>
+    </dl>
+  </section>
+
+  <section class="controls" aria-label="Board controls">
+    <label class="field">Search
+      <input type="search" id="q" placeholder="Name, category or chain…" autocomplete="off">
+    </label>
+    <label class="field">Category
+      <select id="category"><option value="all">All categories</option></select>
+    </label>
+    <div class="field">Token status
+      <div class="tabs" role="group" aria-label="Token status">
+        <button type="button" id="tab-pre" aria-pressed="true">Pre-token</button>
+        <button type="button" id="tab-live" aria-pressed="false">Live token</button>
+      </div>
+    </div>
+    <p class="count" id="count" aria-live="polite"></p>
+  </section>
+
+  <section class="panel" id="board-panel">
+    <div class="table-wrap">
+      <table id="board">
+        <caption id="board-caption">Pre-token protocols, strongest implied value first. Select a row for its model breakdown and farm plan.</caption>
+        <thead><tr>
+          <th scope="col"><button type="button" data-sort="rank">Rank <span class="arrow" data-arrow="rank"></span></button></th>
+          <th scope="col"><button type="button" data-sort="name">Protocol <span class="arrow" data-arrow="name"></span></button></th>
+          <th scope="col"><button type="button" data-sort="tvl">TVL <span class="arrow" data-arrow="tvl"></span></button></th>
+          <th scope="col"><button type="button" data-sort="growth">7d <span class="arrow" data-arrow="growth"></span></button></th>
+          <th scope="col"><button type="button" data-sort="age">Age <span class="arrow" data-arrow="age"></span></button></th>
+          <th scope="col"><button type="button" data-sort="implied">Implied value <span class="arrow" data-arrow="implied"></span></button></th>
+          <th scope="col">Token</th>
+        </tr></thead>
+        <tbody id="board-body"></tbody>
+      </table>
+      <table id="live-table" hidden>
+        <caption>These protocols already trade, so their market cap is a fact, not a model. They are set aside from the pre-token ranking.</caption>
+        <thead><tr>
+          <th scope="col">Status</th><th scope="col">Protocol</th><th scope="col">TVL</th>
+          <th scope="col">7d</th><th scope="col">Market cap</th><th scope="col">Token</th>
+        </tr></thead>
+        <tbody id="live-body"></tbody>
+      </table>
+    </div>
+    <p class="empty" id="empty" hidden>No protocol matches that filter. <button type="button" id="clear">Clear filters</button></p>
+  </section>
+
+  <section class="panel model" id="model-panel" aria-labelledby="model-h">
+    <h2 id="model-h">How implied value is computed</h2>
+    <p>Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked.</p>
+    <p class="formula" id="formula"></p>
+    <p>Growth is the 7-day TVL change, clamped to −80…300% and dampened with tanh, so a hot week lifts a protocol but never doubles it. Maturity grows from 0.75 toward 1.10 over about 540 days of running with no token; a protocol with no listing date is scored as 365 days old. Breadth adds 4% per extra chain, up to 5 extra chains.</p>
+    <h3>Calibration — where each category multiple comes from</h3>
+    <p>For each category, the multiple is the median market-cap-to-TVL ratio of the live-token protocols in that category, each ratio winsorised to 0.001…3, then shrunk toward the global median with strength 5. Categories with fewer than 3 live comparables use the global median outright. The global median across all live comparables is <b class="num" id="global-mult">—</b>.</p>
+    <div class="table-wrap">
+      <table class="calib">
+        <caption>Categories with at least one live comparable, highest multiple first.</caption>
+        <thead><tr><th scope="col">Category</th><th scope="col">Live comparables</th><th scope="col">Median ratio</th><th scope="col">Multiple</th></tr></thead>
+        <tbody id="calib-body"></tbody>
+      </table>
+    </div>
+    <p class="honest"><b>Read this honestly:</b> implied value is a model, not a price — it says what a launch might be worth if the market priced it like its live peers, nothing more. And “records no token” means the DefiLlama index records none for that protocol; it is not proof that no token exists.</p>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-2.</p>
+  <p>This page renders with no network: every number it shows ships in the data file beside it.</p>
+</footer>
+
+<dialog id="detail" aria-labelledby="detail-title">
+  <div id="detail-body"></div>
+</dialog>
+
+<script src="../data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
