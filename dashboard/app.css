@@ -88,6 +88,12 @@ td.num,th.num{text-align:right}
 .badge{display:inline-block;padding:2px 9px;border:1px solid var(--amber-dim);border-radius:20px;
   color:var(--amber);font-size:11px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap}
 .badge.live{border-color:#2f6b46;color:var(--green)}
+.verdict{display:inline-block;padding:2px 9px;border-radius:20px;
+  font-size:11px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;font-weight:700}
+.verdict.farm{background:var(--green);color:#06210f}
+.verdict.thin{background:var(--amber);color:#111}
+.verdict.skip{background:#2a2e35;color:var(--muted);border:1px solid var(--line)}
+td .verdict + .sub{display:block;margin-top:3px}
 .empty{padding:34px;text-align:center;color:var(--muted)}
 .empty button{margin-left:8px;min-height:34px;padding:0 14px;border:1px solid var(--amber);
   border-radius:6px;background:transparent;color:var(--amber)}

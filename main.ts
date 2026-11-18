@@ -1,4 +1,4 @@
-// Token Radar, model radar-2 (Node 22, standard library only).
+// Token Radar, model radar-3 (Node 22, standard library only).
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>),
 // scores every pre-token protocol with the comparables model in lib/model.ts,
@@ -84,6 +84,8 @@ for (const name of shots) {
 writeFileSync(join(out, 'dossier.json'), buildDossier(out, { text_max_bytes: TEXT_MAX_BYTES, screenshots: SCREENSHOT_CAPS, dashboard: { max_files: 400, max_bytes: 4_194_304 } }));
 
 process.stdout.write(
-  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside)\n` +
+  `token radar: ${snapshot.protocols.length} protocols, ${snapshot.watchlist.length} on the watchlist, ${board.length} rows scored (${radar.early_size} early, ${radar.live_size} live set aside, ${radar.not_launch_size} not launches)\n` +
+    `token radar: model ${radar.model_version}, size curve log(mcap) = ${radar.fit.intercept} + ${radar.fit.slope} * log(tvl), LOO median log error ${radar.validation.loo[2]!.median_log_error} vs flat ${radar.validation.loo[0]!.median_log_error}\n` +
+    `token radar: verdicts FARM ${radar.verdict_counts.FARM} / THIN ${radar.verdict_counts.THIN} / SKIP ${radar.verdict_counts.SKIP}\n` +
     `token radar: wrote ${join(out, 'board.json')}, ${join(out, 'data.js')}, ${join(out, 'dashboard')} (${dashFiles.length} files), ${join(out, 'screenshots')} (${shots.length} images) and ${join(out, 'dossier.json')}\n`,
 );

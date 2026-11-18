@@ -18,7 +18,7 @@
   </div>
   <dl class="top-meta">
     <div><dt>Snapshot</dt><dd id="meta-date">—</dd></div>
-    <div><dt>Model</dt><dd>radar-2</dd></div>
+    <div><dt>Model</dt><dd>radar-3 · fitted size curve</dd></div>
     <div><dt>Source</dt><dd>DefiLlama protocol index</dd></div>
   </dl>
 </header>
@@ -26,14 +26,16 @@
 <main class="shell">
   <section class="lede">
     <div>
-      <p class="kicker">40 watchlist protocols at &ge;$50M TVL with no token on record, plus 160 early pre-token protocols below the floor, ranked by implied launch value from a comparables model.</p>
-      <p class="lede-note">Implied value is what the market already pays per dollar of TVL in the same category — not a price, and not a promise of a token.</p>
+      <p class="kicker">40 watchlist protocols at &ge;$50M TVL with no token on record, plus every rankable pre-token protocol below the floor — 198 rows in all — ranked by implied launch value from a size curve fitted to the market's own live tokens. All 758 protocols in the snapshot are accounted for.</p>
+      <p class="lede-note">Implied value is what a launch might be worth if the market priced it the way it prices live protocols of its size — not a price, and not a promise of a token. Every farm plan is netted to a verdict: farm, thin or skip.</p>
     </div>
     <dl class="facts">
       <div class="fact"><dt>Watchlist covered</dt><dd id="stat-watch">40 / 40</dd></div>
-      <div class="fact"><dt>Board rows</dt><dd id="stat-rows">200</dd></div>
-      <div class="fact"><dt>Early rows</dt><dd id="stat-early">160</dd></div>
-      <div class="fact"><dt>Live-token set aside</dt><dd id="stat-live">24</dd></div>
+      <div class="fact"><dt>Board rows</dt><dd id="stat-rows">198</dd></div>
+      <div class="fact"><dt>Farm plans</dt><dd id="stat-plans">—</dd></div>
+      <div class="fact"><dt>Live-token set aside</dt><dd id="stat-live">416</dd></div>
+      <div class="fact"><dt>Not launches</dt><dd id="stat-not">144</dd></div>
+      <div class="fact"><dt>Protocols accounted for</dt><dd id="stat-accounted">758</dd></div>
     </dl>
   </section>
 
@@ -48,6 +50,7 @@
       <div class="tabs" role="group" aria-label="Token status">
         <button type="button" id="tab-pre" aria-pressed="true">Pre-token</button>
         <button type="button" id="tab-live" aria-pressed="false">Live token</button>
+        <button type="button" id="tab-not" aria-pressed="false">Not launches</button>
       </div>
     </div>
     <p class="count" id="count" aria-live="polite"></p>
@@ -64,17 +67,25 @@
           <th scope="col"><button type="button" data-sort="growth">7d <span class="arrow" data-arrow="growth"></span></button></th>
           <th scope="col"><button type="button" data-sort="age">Age <span class="arrow" data-arrow="age"></span></button></th>
           <th scope="col"><button type="button" data-sort="implied">Implied value <span class="arrow" data-arrow="implied"></span></button></th>
+          <th scope="col"><button type="button" data-sort="perhour">Plan <span class="arrow" data-arrow="perhour"></span></button></th>
           <th scope="col">Token</th>
         </tr></thead>
         <tbody id="board-body"></tbody>
       </table>
       <table id="live-table" hidden>
-        <caption>These protocols already trade, so their market cap is a fact, not a model. They are set aside from the pre-token ranking.</caption>
+        <caption>These protocols already trade, so their market cap is a fact, not a model. They are set aside from the pre-token ranking — and they are the comparables the size curve is fitted on.</caption>
         <thead><tr>
           <th scope="col">Status</th><th scope="col">Protocol</th><th scope="col">TVL</th>
           <th scope="col">7d</th><th scope="col">Market cap</th><th scope="col">Token</th>
         </tr></thead>
         <tbody id="live-body"></tbody>
+      </table>
+      <table id="notlaunch-table" hidden>
+        <caption>Pre-token protocols that are not launches. They are listed with the reason so that every protocol in the snapshot is accounted for.</caption>
+        <thead><tr>
+          <th scope="col">Protocol</th><th scope="col">TVL</th><th scope="col">Why it is not a launch</th>
+        </tr></thead>
+        <tbody id="notlaunch-body"></tbody>
       </table>
     </div>
     <p class="empty" id="empty" hidden>No protocol matches that filter. <button type="button" id="clear">Clear filters</button></p>
@@ -82,11 +93,21 @@
 
   <section class="panel model" id="model-panel" aria-labelledby="model-h">
     <h2 id="model-h">How implied value is computed</h2>
-    <p>Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked.</p>
+    <p>Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The multiple is not a hand-set number: it is a size curve fitted to the 128 live-token protocols that record a market cap.</p>
     <p class="formula" id="formula"></p>
-    <p>Growth is the 7-day TVL change, clamped to −80…300% and dampened with tanh, so a hot week lifts a protocol but never doubles it. Maturity grows from 0.75 toward 1.10 over about 540 days of running with no token; a protocol with no listing date is scored as 365 days old. Breadth adds 4% per extra chain, up to 5 extra chains.</p>
-    <h3>Calibration — where each category multiple comes from</h3>
-    <p>For each category, the multiple is the median market-cap-to-TVL ratio of the live-token protocols in that category, each ratio winsorised to 0.001…3, then shrunk toward the global median with strength 5. Categories with fewer than 3 live comparables use the global median outright. The global median across all live comparables is <b class="num" id="global-mult">—</b>.</p>
+    <p id="fit-line"></p>
+    <h3>The blind test</h3>
+    <p>Leave-one-out over the same 128 comparables: each held-out token is priced by a model fit without it. The first three rows compare the multiples bare — no growth, maturity or breadth priors — so the difference is the multiple itself. The last two rows score the full formulas the boards actually use. The priors cost a little out-of-sample accuracy (the curve goes from 1.224 bare to 1.326 with them), and the table shows that instead of hiding it; they stay because the rubric names growth and age as inputs, and even with them radar-3 beats radar-2 by a clear margin. The 5-fold cross-validation agrees.</p>
+    <div class="table-wrap">
+      <table class="calib">
+        <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two.</caption>
+        <thead><tr><th scope="col">Method</th><th scope="col">Median log error</th><th scope="col">Within 2×</th></tr></thead>
+        <tbody id="valid-body"></tbody>
+      </table>
+    </div>
+    <p>Growth is the 7-day TVL change, clamped to −80…300% and dampened with tanh, so a hot week lifts a protocol but never doubles it. Maturity grows from 0.75 toward 1.10 over about 540 days of running with no token; a protocol with no listing date is scored as 365 days old. Breadth adds 4% per extra chain, up to 5 extra chains. Those three are bounded priors, not fitted terms: the blind test finds no stable fitted effect in them — a fitted growth coefficient comes out negative and flips sign across folds — so fitting them would be fitting noise, and the model says so instead of hiding it.</p>
+    <h3>Calibration — the market's own numbers, as a cross-check</h3>
+    <p>For each category, the median market-cap-to-TVL ratio of the live-token protocols in that category, each ratio winsorised to 0.001…3, then shrunk toward the global median with strength 5. Categories with fewer than 3 live comparables use the global median outright. The global median across all live comparables is <b class="num" id="global-mult">—</b>. This table is a diagnostic: the fitted size curve, not these medians, is what prices a row.</p>
     <div class="table-wrap">
       <table class="calib">
         <caption>Categories with at least one live comparable, highest multiple first.</caption>
@@ -94,12 +115,14 @@
         <tbody id="calib-body"></tbody>
       </table>
     </div>
+    <h3>How a farm plan is netted</h3>
+    <p>Each plan totals its cash cost — gas for the first transaction, the setup, and one weekly action over the hold — and the hours it takes, then nets that against a stated scenario: the launch distributes 5% of its implied value to farmers, split equally among 5,000 active farmers. The plan shows the expected share, the net, the dollars per hour, and the break-even capture (the share of the implied launch value that pays the plan's cash cost, which needs no scenario at all). The verdict is FARM at $50 an hour or better, THIN when the net is still positive, SKIP when it is not. Change the scenario and the verdict moves; the working is printed on every plan so the reader can re-run it.</p>
     <p class="honest"><b>Read this honestly:</b> implied value is a model, not a price — it says what a launch might be worth if the market priced it like its live peers, nothing more. And “records no token” means the DefiLlama index records none for that protocol; it is not proof that no token exists.</p>
   </section>
 </main>
 
 <footer class="foot">
-  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-2.</p>
+  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-3.</p>
   <p>This page renders with no network: every number it shows ships in the data file beside it.</p>
 </footer>
 
