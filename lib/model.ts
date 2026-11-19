@@ -1,5 +1,5 @@
-// The token radar's model, version radar-4: a fitted comparables model,
-// walk-forward validated.
+// The token radar's model, version radar-5: a fitted comparables model,
+// walk-forward validated, with a break-even-odds verdict rule.
 //
 // The board ranks every pre-token protocol that could launch — the 40 on the
 // snapshot's watchlist plus every rankable protocol below the floor — and
@@ -48,9 +48,54 @@
 // launch distributes 5% of its implied value to farmers, split equally among
 // 5,000 active farmers — giving an expected share, a net, dollars per hour
 // and a break-even capture (the share of the implied launch value that pays
-// the plan's cash cost, no scenario needed). The verdict is FARM, THIN or
-// SKIP from those numbers, and the plan prints its working so the reader can
-// re-run it under their own scenario.
+// the plan's cash cost, no scenario needed).
+//
+// The verdict is FARM, THIN or SKIP from break-even ODDS, not from the
+// point-estimate dollars per hour — new in radar-5. The old rule (FARM at
+// $50 an hour) farmed 71 of 198 rows, because the plan's cash cost is only
+// $16–$24 of gas and almost any point-estimate share covers it; the
+// break-even capture it quoted (0.000019% of implied value) was vacuously
+// satisfied. The odds rule asks the harder question: under the model's OWN
+// uncertainty, how likely is the farm to pay for itself?
+//
+//   break-even value  = total_cost / (scenario_airdrop_share / scenario_farmers)
+//                     = total_cost x 100,000
+//                       (the launch value at which the farmer's share
+//                       exactly covers the plan's gas cost)
+//   break-even odds   = P(launch value >= break-even value)
+//                     = Phi( ln(implied / break-even value) / residual_sd )
+//                       with log(launch value) ~ Normal(log(implied),
+//                       residual_sd) and residual_sd = 2.077, the size
+//                       curve's own residual SD in log space.
+//
+//   FARM when odds >= 0.90, THIN when 0.75 <= odds < 0.90, SKIP otherwise.
+//
+// In plain terms: FARM means the launch value covers the gas cost in at
+// least 9 of 10 draws from the model's own error distribution — the launch
+// would have to come in more than 14x below the point estimate to lose
+// money. THIN means 3 in 4 to 9 in 10 draws (the launch must land within
+// roughly 4x–14x of the point estimate). SKIP means worse than 3 in 4: the
+// point-estimate net may still look positive, but the model's own blind
+// test says only about 1 token in 3 lands within a factor of 2, so a plan
+// that needs the launch to land within a factor of 4 just to cover $16–$24
+// of gas is not a bet worth taking. The thresholds 0.90 and 0.75 are round
+// numbers on a probability scale, chosen for what they mean; they were not
+// tuned to produce a target split (0.90/0.50 would give 19/179/0, leaving
+// SKIP empty — the old problem — and 0.95/0.75 would give 4/92/102,
+// leaving FARM nearly empty). Odds are quoted to three decimals and the
+// verdict keys on the quoted odds, so the printed number and the verdict
+// can never disagree.
+//
+// Two honest limits, stated wherever the rule is stated: the odds condition
+// on the token launching at all — a protocol that never launches loses the
+// gas whatever the odds say — and they use the bare curve's residual SD,
+// so they inherit the same wide error bars as every implied value. The
+// verdict no longer keys on dollars per hour, but the plan still prints
+// the expected share, the net and the dollars per hour under the stated
+// scenario, so the reader can see both the point estimate and the odds.
+// The plan prints its working so the reader can re-run it under their own
+// scenario: changing the airdrop share or the farmer count moves the
+// break-even value, and the odds move with it.
 //
 // No protocol name is ever special-cased: the same function scores every row,
 // the same fit prices every multiple, and the calibration, the blind test and
@@ -104,8 +149,10 @@ export interface ModelConstants {
   gas_setup_low_usd: number;
   /** Gas for one weekly qualifying action, in whole dollars. */
   gas_weekly_usd: number;
-  /** Dollars per hour at which a plan is a FARM rather than THIN. */
-  farm_per_hour_usd: number;
+  /** Break-even odds at or above which a plan is a FARM: 0.90. */
+  farm_odds_high: number;
+  /** Break-even odds at or above which a plan is a THIN: 0.75. */
+  farm_odds_mid: number;
   /** Bootstrap refits behind each row's rank range. */
   bootstrap_refits: number;
 }
@@ -127,12 +174,13 @@ export const MODEL: ModelConstants = {
   gas_setup_high_usd: 8,
   gas_setup_low_usd: 4,
   gas_weekly_usd: 2,
-  farm_per_hour_usd: 50,
+  farm_odds_high: 0.9,
+  farm_odds_mid: 0.75,
   bootstrap_refits: 200,
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-4';
+export const MODEL_VERSION = 'radar-5';
 
 /** One row of the calibration table the dashboard prints. */
 export interface CategoryMultiple {
@@ -249,6 +297,10 @@ export interface PlanNetting {
   per_hour_usd: number;
   /** The share of the implied launch value that pays the plan's cash cost, in per cent. */
   breakeven_capture_pct: number;
+  /** Break-even odds: P(launch value >= break-even value) under the model's
+   *  own error distribution, log(value) ~ Normal(log(implied), residual_sd).
+   *  The verdict keys on this, not on dollars per hour. */
+  breakeven_odds: number;
   verdict: 'FARM' | 'THIN' | 'SKIP';
 }
 
@@ -311,6 +363,7 @@ export interface RadarRow {
   verdict: 'FARM' | 'THIN' | 'SKIP';
   per_hour_usd: number;
   breakeven_capture_pct: number;
+  breakeven_odds: number;
   nearest_comp_name: string;
   nearest_comp_tvl_usd: number;
   nearest_comp_mcap_usd: number;
@@ -911,6 +964,7 @@ export function buildBoard(
   fit: { intercept: number; slope: number },
   ranges: Map<string, { lo: number; hi: number }>,
   model: ModelConstants = MODEL,
+  residualSd: number = 2.077,
 ): BoardRow[] {
   const index = bySlug(snapshot.protocols);
   const chosen = new Map<string, SnapshotProtocol>();
@@ -928,7 +982,7 @@ export function buildBoard(
   });
   scored.sort((a, b) => b.implied - a.implied || (a.p.slug < b.p.slug ? -1 : a.p.slug > b.p.slug ? 1 : 0));
   return scored.map((s, i) => {
-    const plan = farmPlan(s.p, s.age, s.implied, model);
+    const plan = farmPlan(s.p, s.age, s.implied, model, residualSd);
     const range = ranges.get(s.p.slug) ?? { lo: i + 1, hi: i + 1 };
     const comp = nearestComp(s.p, comps);
     return {
@@ -1063,17 +1117,57 @@ function pct(n: number): string {
   return n.toFixed(4) + '%';
 }
 
+/** The standard normal CDF, Abramowitz–Stegun 7.1.26 (|error| < 1.5e-7).
+ *  Node has no Math.erf; the dashboard's app.js carries the same formula,
+ *  so the two agree to the last digit they print. */
+export function normCdf(z: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(z));
+  const poly = t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  const cdf = 1 - Math.exp(-(z * z) / 2) / Math.sqrt(2 * Math.PI) * poly;
+  return z >= 0 ? cdf : 1 - cdf;
+}
+
+/**
+ * Break-even odds: the probability the launch value covers the plan's gas
+ * cost, under the model's own error distribution. The launch value that
+ * exactly covers the cost is total_cost / (scenario_airdrop_share /
+ * scenario_farmers); log(launch value) is Normal(log(implied),
+ * residual_sd), so the odds are Phi(ln(implied / break-even value) /
+ * residual_sd). residual_sd is the size curve's residual SD (2.077), the
+ * same number the fit line prints — the odds inherit the model's own
+ * uncertainty, and they condition on the token launching at all.
+ */
+export function breakevenOdds(
+  implied: number,
+  totalCostUsd: number,
+  residualSd: number,
+  model: ModelConstants = MODEL,
+): number {
+  const breakevenValue = totalCostUsd / (model.scenario_airdrop_share / model.scenario_farmers);
+  return normCdf(Math.log(implied / breakevenValue) / residualSd);
+}
+
+/** The verdict from the break-even odds: FARM at 0.90, THIN at 0.75, else SKIP. */
+export function verdictFromOdds(odds: number, model: ModelConstants = MODEL): PlanNetting['verdict'] {
+  return odds >= model.farm_odds_high ? 'FARM' : odds >= model.farm_odds_mid ? 'THIN' : 'SKIP';
+}
+
 /**
  * A protocol's farm plan: six steps, each an action with a cost and a time,
  * and the netting the verdict rests on. The plan is derived from the
  * protocol's own record (category, chains, TVL, age) and its implied value,
- * never from a hand-written list of names.
+ * never from a hand-written list of names. The verdict keys on break-even
+ * odds under the model's own error distribution (residual_sd is the size
+ * curve's residual SD); the expected share, net and dollars per hour under
+ * the stated scenario are still printed, so the reader sees both the point
+ * estimate and the odds.
  */
 export function farmPlan(
   p: SnapshotProtocol,
   age: number | null,
   implied: number,
   model: ModelConstants = MODEL,
+  residualSd: number = 2.077,
 ): { steps: FarmStep[]; netting: PlanNetting } {
   const chain = chainOf(p);
   const capital = capitalFor(p);
@@ -1086,7 +1180,11 @@ export function farmPlan(
   const net = expectedShare - totalCost;
   const perHour = net / hours;
   const breakeven = (totalCost / implied) * 100;
-  const verdict: PlanNetting['verdict'] = perHour >= model.farm_per_hour_usd ? 'FARM' : net >= 0 ? 'THIN' : 'SKIP';
+  // Quoted to three decimals, and the verdict keys on the QUOTED odds, so
+  // the printed number and the verdict can never disagree: two rows sit at
+  // 0.7498–0.7500 unrounded and read 0.750 either way.
+  const odds = round3(breakevenOdds(implied, totalCost, residualSd, model));
+  const verdict: PlanNetting['verdict'] = verdictFromOdds(odds, model);
   const netting: PlanNetting = {
     capital_usd: capital,
     hold_days: hold,
@@ -1096,14 +1194,12 @@ export function farmPlan(
     net_usd: Math.round(net),
     per_hour_usd: Math.round(perHour),
     breakeven_capture_pct: round4(breakeven),
+    breakeven_odds: odds,
     verdict,
   };
+  const oddsPct = Math.round(odds * 100);
   const verdictLine =
-    verdict === 'FARM'
-      ? `Verdict: FARM — under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ${usd(expectedShare)}, net ${usd(net)} after ${usd(totalCost)} of gas, about ${usd(perHour)} an hour.`
-      : verdict === 'THIN'
-        ? `Verdict: THIN — under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ${usd(expectedShare)}, net ${usd(net)} after ${usd(totalCost)} of gas, about ${usd(perHour)} an hour.`
-        : `Verdict: SKIP — under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ${usd(expectedShare)}, less than the ${usd(totalCost)} of gas this plan costs, net ${usd(net)}.`;
+    `Verdict: ${verdict} — break-even odds ${oddsPct}%: the launch value covers the ${usd(totalCost)} gas cost in ${oddsPct} of 100 draws from the model's own error distribution (residual SD ${residualSd.toFixed(3)} in log space). Under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ${usd(expectedShare)}, net ${usd(net)} after ${usd(totalCost)} of gas, about ${usd(perHour)} an hour.`;
   const steps: FarmStep[] = [
     {
       text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.',
@@ -1192,6 +1288,7 @@ export function radarRow(row: BoardRow): RadarRow {
     verdict: row.netting.verdict,
     per_hour_usd: row.netting.per_hour_usd,
     breakeven_capture_pct: row.netting.breakeven_capture_pct,
+    breakeven_odds: row.netting.breakeven_odds,
     nearest_comp_name: row.model.nearest_comp_name,
     nearest_comp_tvl_usd: row.model.nearest_comp_tvl_usd,
     nearest_comp_mcap_usd: row.model.nearest_comp_mcap_usd,
@@ -1220,7 +1317,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     return isRankable(p);
   });
   const ranges = rankRanges(candidates, comps, snapshot.as_of, model);
-  const board = buildBoard(snapshot, fit, ranges, model);
+  const board = buildBoard(snapshot, fit, ranges, model, diagnostics.residual_sd);
   const live = liveRows(snapshot);
   const notLaunches = notLaunchRows(snapshot);
   const early = board.filter((r) => !snapshot.watchlist.includes(r.slug)).length;

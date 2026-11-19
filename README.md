@@ -6,7 +6,7 @@
 
 A token launch radar for make.fun's token-radar-01 bounty. It reads a sealed snapshot of every protocol DefiLlama tracks, finds the ones that record no token, and ranks them by what their launch would be worth — then shows a dashboard a reader can use: the board, a detail view for each protocol, and the steps to farm it. Built by an AI agent for make.fun's "Build the best token launch radar" bounty, $1,325 in USDC.
 
-## The model (radar-4)
+## The model (radar-5)
 
 A fitted size curve, calibrated from the snapshot itself. The multiple is not
 a hand-set number: it is log(market cap) = 6.9646 + 0.5223 × log(TVL), fit by
@@ -71,6 +71,36 @@ dashboard shows all of this, plus a **live refit sandbox**: intercept and
 slope sliders re-price the board in-page (same bounded priors), with a
 reset to the fitted curve.
 
+### What radar-5 adds: the verdict is break-even odds, not dollars per hour
+
+The curve, the priors and the farm-plan steps are unchanged — radar-5
+re-prices nothing. What changes is the verdict. Radar-4 called a plan FARM
+at $50 an hour under the stated scenario, which farmed 71 of 198 rows:
+the cash cost is only $16–$24 of gas, so almost any point-estimate share
+covers it, and the break-even capture it quoted (0.000019% of implied
+value) was vacuously satisfied. Radar-5 asks the harder question: under
+the model's own uncertainty, how likely is the farm to pay for itself?
+The break-even value is the launch value at which the farmer's share
+exactly covers the plan's gas cost — cash cost divided by the farmer's
+share of the launch (5% split among 5,000 farmers, so the break-even
+value is the cash cost × 100,000). Log launch value is normal around the
+point estimate with the size curve's residual standard deviation, 2.077
+in log space, so the break-even odds are Φ(ln(implied / break-even
+value) / 2.077). FARM at odds of 90% or better, THIN at 75% or better,
+SKIP below that — in plain terms, FARM means the launch covers the gas
+in at least 9 of 10 draws from the model's own error distribution. The
+board now splits FARM 19, THIN 77, SKIP 102. Two honest limits: the odds
+condition on the token launching at all, and they inherit the same wide
+error bars as every implied value. The plan still prints the expected
+share, the net and the dollars per hour under the stated scenario, so the
+reader sees both the point estimate and the odds.
+
+A drift check run 2026-11-19, five days after the snapshot: the radar-3
+fit predicts the 121 live comparables of a fresh pull of the same source
+at median |log error| 1.280 bare, against 1.224 leave-one-out — no drift
+alarm, so the curve is kept as fitted. Zero comparables were gained in
+those five days, so no new launch exists to hold out on.
+
 ## The board
 
 198 rows: the 40 watchlist protocols (TVL at or above $50M, no token on
@@ -84,8 +114,10 @@ six-step farm plan derived from the protocol's category, chains, TVL and age,
 each step stating what it costs and how long it takes — and the plan is
 netted: cash cost and hours against a stated scenario (the launch
 distributes 5% of its implied value to farmers, split equally among 5,000
-active farmers), giving a verdict of FARM, THIN or SKIP with the dollars per
-hour and the break-even capture printed on the plan. The detail view shows
+active farmers), giving a verdict of FARM, THIN or SKIP from break-even
+odds — the chance the launch value covers the plan's gas cost under the
+model's own error distribution — with the dollars per hour and the
+break-even capture printed on the plan. The detail view shows
 the full model breakdown, the rank range across 200 bootstrap refits, the
 nearest live comparable, and a recomputation of the implied value from the
 snapshot figures that must match the board's value exactly.
@@ -105,7 +137,7 @@ the same snapshot always writes the same bytes.
 
 - `main.ts` — the program: reads the snapshot, writes the board, the data
   and the dossier.
-- `lib/model.ts` — the radar-4 model, the calibration, the farm plans.
+- `lib/model.ts` — the radar-5 model, the calibration, the farm plans.
 - `dashboard/` — the static page: `index.html`, `app.css`, `app.js`. No
   network, no framework.
 - `screenshots/` — the board, a protocol's detail view, a filtered view, and the validation panel with the refit sandbox.

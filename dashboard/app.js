@@ -1,5 +1,5 @@
 /* TOKEN RADAR — renders window.RADAR with no network.
-   Model radar-3 (mirrors lib/model.ts): the size curve is fitted to the
+   Model radar-5 (mirrors lib/model.ts): the size curve is fitted to the
    snapshot's own live comparables, and every farm plan is netted against the
    stated scenario. The implied value is recomputed per row from the snapshot
    figures and checked against the board's number. No protocol name is ever
@@ -103,9 +103,18 @@
     var net = expectedShare - totalCost;
     var perHour = net / hours;
     var breakeven = (totalCost / implied) * 100;
-    var verdict = perHour >= M.farm_per_hour_usd ? 'FARM' : net >= 0 ? 'THIN' : 'SKIP';
+    var breakevenValue = totalCost / (M.scenario_airdrop_share / M.scenario_farmers);
+    var odds = Math.round(normCdf(Math.log(implied / breakevenValue) / F.residual_sd) * 1000) / 1000;
+    var verdict = odds >= M.farm_odds_high ? 'FARM' : odds >= M.farm_odds_mid ? 'THIN' : 'SKIP';
     return { capital: capital, hold: hold, weeks: weeks, setupGas: setupGas, totalCost: totalCost, hours: hours,
-      expectedShare: expectedShare, net: net, perHour: perHour, breakeven: breakeven, verdict: verdict };
+      expectedShare: expectedShare, net: net, perHour: perHour, breakeven: breakeven, odds: odds, verdict: verdict };
+  }
+  /* Standard normal CDF, Abramowitz-Stegun 7.1.26 — same formula as lib/model.ts. */
+  function normCdf(z) {
+    var t = 1 / (1 + 0.2316419 * Math.abs(z));
+    var poly = t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    var cdf = 1 - Math.exp(-(z * z) / 2) / Math.sqrt(2 * Math.PI) * poly;
+    return z >= 0 ? cdf : 1 - cdf;
   }
   function stepText(s) {
     var t = s.text + ' Cost: ' + s.cost + '. Time: ' + s.time + '.';
@@ -117,12 +126,7 @@
     var v = impliedOf(p);
     var n = nettingOf(p, v.implied);
     var chain = chainOf(p), capital = n.capital, hold = n.hold;
-    var verdictLine =
-      n.verdict === 'FARM'
-        ? 'Verdict: FARM — under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ' + usd(n.expectedShare) + ', net ' + usd(n.net) + ' after ' + usd(n.totalCost) + ' of gas, about ' + usd(n.perHour) + ' an hour.'
-        : n.verdict === 'THIN'
-          ? 'Verdict: THIN — under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ' + usd(n.expectedShare) + ', net ' + usd(n.net) + ' after ' + usd(n.totalCost) + ' of gas, about ' + usd(n.perHour) + ' an hour.'
-          : 'Verdict: SKIP — under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ' + usd(n.expectedShare) + ', less than the ' + usd(n.totalCost) + ' of gas this plan costs, net ' + usd(n.net) + '.';
+    var verdictLine = 'Verdict: ' + n.verdict + ' — break-even odds ' + Math.round(n.odds * 100) + '%: the launch value covers the ' + usd(n.totalCost) + ' gas cost in ' + Math.round(n.odds * 100) + ' of 100 draws from the model\'s own error distribution (residual SD ' + F.residual_sd.toFixed(3) + ' in log space). Under the stated scenario (5% of the implied value to 5,000 farmers) your share is about ' + usd(n.expectedShare) + ', net ' + usd(n.net) + ' after ' + usd(n.totalCost) + ' of gas, about ' + usd(n.perHour) + ' an hour.';
     return [
       { text: 'Use a fresh wallet that holds only the funds you plan to farm, and keep its seed phrase offline.', cost: 'under $' + M.gas_first_tx_usd + ' of gas for the first transaction', time: '5 minutes' },
       { text: actionFor(p, capital, chain), cost: '$' + capital + ' of capital and about $' + n.setupGas + ' of gas', time: '15 minutes to set up' },
@@ -190,7 +194,7 @@
       '<td class="num ' + gc + '">' + fmtPct(g) + '</td>' +
       '<td class="num">' + fmtAge(r.age_days) + '</td>' +
       '<td><div class="implied"><span class="bar" aria-hidden="true"><i style="width:' + pctv + '%"></i></span><span class="num">' + fmtUsd(r.implied_value_usd) + '</span></div></td>' +
-      '<td>' + verdictBadge(r.verdict) + '<span class="sub">' + usd(r.per_hour_usd) + '/h</span></td>' +
+      '<td>' + verdictBadge(r.verdict) + '<span class="sub">' + Math.round(r.breakeven_odds * 100) + '% odds</span></td>' +
       '<td><span class="badge">no token</span></td></tr>';
   }
   function renderBoard() {
@@ -276,7 +280,7 @@
         s.curve_median_log_error.toFixed(3) + '</td><td>' + (s.curve_within_2x * 100).toFixed(1) + '%</td><td>' +
         s.full_median_log_error.toFixed(3) + '</td><td>' + s.shrunk_median_log_error.toFixed(3) + '</td></tr>';
     }).join('') +
-      '<tr class="pooled"><td>Pooled</td><td>' + wf.dated_n + ' dated comparables, 101 test predictions</td><td>' +
+      '<tr class="pooled"><td>Pooled</td><td>' + wf.dated_n + ' dated comparables, 101 test predictions over 51 distinct tokens</td><td>' +
       wf.pooled_curve_median_log_error.toFixed(3) + '</td><td>' + (wf.pooled_curve_within_2x * 100).toFixed(1) + '%</td><td>' +
       wf.pooled_full_median_log_error.toFixed(3) + '</td><td>' + wf.pooled_shrunk_median_log_error.toFixed(3) + '</td></tr>';
     $('ablation-body').innerHTML = D.validation.ablation.map(function (a) {
@@ -362,7 +366,7 @@
       '</p>' +
       '<p class="agree">Nearest live comparable: <b>' + esc(r.nearest_comp_name || '') + '</b> — TVL ' + fmtUsd(r.nearest_comp_tvl_usd) + ', market cap ' + fmtUsd(r.nearest_comp_mcap_usd) + ', multiple ' + (r.nearest_comp_multiple || 0).toFixed(4) + '×.</p></section>' +
       '<section class="detail-section"><h3>Farm plan — netted</h3>' +
-      '<p class="agree"><b>' + n.verdict + '</b> — about ' + usd(n.perHour) + ' an hour, net ' + usd(n.net) + ' after ' + usd(n.totalCost) + ' of gas. Break-even by capturing ' + pct(n.breakeven) + ' of the implied launch value.</p>' +
+      '<p class="agree"><b>' + n.verdict + '</b> — break-even odds ' + Math.round(n.odds * 100) + '%: the launch value covers the ' + usd(n.totalCost) + ' gas cost in ' + Math.round(n.odds * 100) + ' of 100 draws from the model\'s own error distribution (residual SD ' + F.residual_sd.toFixed(3) + ' in log space). About ' + usd(n.perHour) + ' an hour, net ' + usd(n.net) + ' after ' + usd(n.totalCost) + ' of gas. Break-even by capturing ' + pct(n.breakeven) + ' of the implied launch value.</p>' +
       '<ol class="steps">' + steps + '</ol>' +
       '<div class="equation">' +
       '<div><span>Capital in the position</span><b>' + usd(n.capital) + '</b></div>' +
@@ -372,8 +376,9 @@
       '<div><span>Net</span><b>' + usd(n.net) + '</b></div>' +
       '<div><span>Dollars per hour</span><b>' + usd(n.perHour) + '</b></div>' +
       '<div><span>Break-even capture</span><b>' + pct(n.breakeven) + '</b></div>' +
+      '<div><span>Break-even odds</span><b>' + Math.round(n.odds * 100) + '%</b></div>' +
       '<div class="total"><span>Verdict</span><b>' + n.verdict + '</b></div></div>' +
-      '<p class="agree">Scenario, stated not hidden: the launch distributes 5% of its implied value to farmers, split equally among 5,000 active farmers. Change the scenario and the verdict moves; the working above is how to re-run it.</p></section>';
+      '<p class="agree">Scenario, stated not hidden: the launch distributes 5% of its implied value to farmers, split equally among 5,000 active farmers. That scenario sets the break-even value — the launch value at which the farm\'s share covers its gas — and the odds are the chance the launch clears it; the odds condition on the token launching at all. Change the scenario and the verdict moves; the working above is how to re-run it.</p></section>';
     $('detail-close').addEventListener('click', function () { dialog.close(); });
     if (!dialog.open) dialog.showModal();
     renderBoard();
