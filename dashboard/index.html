@@ -18,7 +18,7 @@
   </div>
   <dl class="top-meta">
     <div><dt>Snapshot</dt><dd id="meta-date">—</dd></div>
-    <div><dt>Model</dt><dd>radar-3 · fitted size curve</dd></div>
+    <div><dt>Model</dt><dd>radar-4 · walk-forward validated curve</dd></div>
     <div><dt>Source</dt><dd>DefiLlama protocol index</dd></div>
   </dl>
 </header>
@@ -97,7 +97,7 @@
     <p class="formula" id="formula"></p>
     <p id="fit-line"></p>
     <h3>The blind test</h3>
-    <p>Leave-one-out over the same 128 comparables: each held-out token is priced by a model fit without it. The first three rows compare the multiples bare — no growth, maturity or breadth priors — so the difference is the multiple itself. The last two rows score the full formulas the boards actually use. The priors cost a little out-of-sample accuracy (the curve goes from 1.224 bare to 1.326 with them), and the table shows that instead of hiding it; they stay because the rubric names growth and age as inputs, and even with them radar-3 beats radar-2 by a clear margin. The 5-fold cross-validation agrees.</p>
+    <p>Leave-one-out over the same 128 comparables: each held-out token is priced by a model fit without it. The first three rows compare the multiples bare — no growth, maturity or breadth priors — so the difference is the multiple itself. The last two rows score the full formulas the boards actually use. The priors cost a little out-of-sample accuracy (the curve goes from 1.224 bare to 1.326 with them), and the table shows that instead of hiding it; they stay because the rubric names growth and age as inputs, and even with them radar-4 beats radar-2 by a clear margin. The 5-fold cross-validation agrees — and radar-4 adds walk-forward validation below, the same curve fit on older listings and tested on newer ones.</p>
     <div class="table-wrap">
       <table class="calib">
         <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two.</caption>
@@ -119,10 +119,56 @@
     <p>Each plan totals its cash cost — gas for the first transaction, the setup, and one weekly action over the hold — and the hours it takes, then nets that against a stated scenario: the launch distributes 5% of its implied value to farmers, split equally among 5,000 active farmers. The plan shows the expected share, the net, the dollars per hour, and the break-even capture (the share of the implied launch value that pays the plan's cash cost, which needs no scenario at all). The verdict is FARM at $50 an hour or better, THIN when the net is still positive, SKIP when it is not. Change the scenario and the verdict moves; the working is printed on every plan so the reader can re-run it.</p>
     <p class="honest"><b>Read this honestly:</b> implied value is a model, not a price — it says what a launch might be worth if the market priced it like its live peers, nothing more. And “records no token” means the DefiLlama index records none for that protocol; it is not proof that no token exists.</p>
   </section>
+
+  <section class="panel model" id="validation-panel" aria-labelledby="valid-h">
+    <h2 id="valid-h">Walk-forward validation — the curve tested on time, not shuffled</h2>
+    <p>Leave-one-out and 5-fold splits shuffle the comparables, so a token listed last month can sit in the training set of a token listed three years ago. Walk-forward does not leak time: at each cutoff the curve is fit on the listings before it and tested on the listings after it. Only the 95 comparables with a listing date can be ordered in time; the 33 without one sit outside these splits, and the table says so. Read the numbers honestly: the test market cap is the snapshot-date market cap, so a split tests whether a curve fit on older listings predicts the <b>current</b> market cap of newer listings — not a launch-day prediction.</p>
+    <div class="table-wrap">
+      <table class="calib">
+        <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two. Pooled is all three test sets together (101 predictions).</caption>
+        <thead><tr><th scope="col">Cutoff</th><th scope="col">Fit on → test on</th><th scope="col">Curve median</th><th scope="col">Curve within 2×</th><th scope="col">Full formula median</th><th scope="col">Shrunk shifts (k=5) median</th></tr></thead>
+        <tbody id="wf-body"></tbody>
+      </table>
+    </div>
+    <h3>Term-by-term ablation — what each term costs out of sample</h3>
+    <p>Each row fits the named terms to log(market cap) alongside log(TVL) and scores the fit two ways: leave-one-out over all 128 comparables, and the pooled walk-forward test errors above. The bare curve wins leave-one-out, and every fitted term hurts it. Growth's small walk-forward pooled gain (1.102 vs 1.129) comes with a worse within-2× share and flips sign across the splits, so no fitted term is adopted — the board keeps the bare curve plus the bounded priors.</p>
+    <div class="table-wrap">
+      <table class="calib">
+        <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two.</caption>
+        <thead><tr><th scope="col">Terms fitted</th><th scope="col">LOO median</th><th scope="col">LOO within 2×</th><th scope="col">Walk-forward pooled median</th><th scope="col">WF within 2×</th></tr></thead>
+        <tbody id="ablation-body"></tbody>
+      </table>
+    </div>
+    <h3>Shrunk category shifts — tested, not adopted</h3>
+    <p id="shrunk-line">Category intercepts shrunk toward the global curve were tested at four strengths and hurt at every one, in leave-one-out and on every walk-forward split — the category means are mostly noise next to a residual standard deviation above 2 in log space — so the board uses no category shift.</p>
+    <h3>Refit sandbox — try your own curve</h3>
+    <p>Move the sliders and the board re-prices live, with the same bounded growth, maturity and breadth priors the fitted board uses. The board above keeps the fitted curve; this sandbox is yours to test what a different curve would do. Reset returns to the fitted intercept and slope.</p>
+    <div class="sandbox">
+      <div class="sandbox-controls">
+        <label>Intercept
+          <input type="range" id="sb-intercept" min="5" max="9" step="0.001" value="6.965">
+          <output id="sb-intercept-out">6.9646</output>
+        </label>
+        <label>Slope
+          <input type="range" id="sb-slope" min="0.2" max="0.8" step="0.001" value="0.522">
+          <output id="sb-slope-out">0.5223</output>
+        </label>
+        <button type="button" id="sb-reset">Reset to fitted curve</button>
+      </div>
+      <p id="sb-summary"></p>
+      <div class="table-wrap">
+        <table class="calib">
+          <caption>Top 10 under your curve, with each protocol's rank on the fitted board.</caption>
+          <thead><tr><th scope="col">Sandbox rank</th><th scope="col">Protocol</th><th scope="col">Fitted rank</th><th scope="col">Sandbox implied value</th></tr></thead>
+          <tbody id="sb-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
 </main>
 
 <footer class="foot">
-  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-3.</p>
+  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-4.</p>
   <p>This page renders with no network: every number it shows ships in the data file beside it.</p>
 </footer>
 

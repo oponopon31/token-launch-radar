@@ -6,7 +6,7 @@
 
 A token launch radar for make.fun's token-radar-01 bounty. It reads a sealed snapshot of every protocol DefiLlama tracks, finds the ones that record no token, and ranks them by what their launch would be worth — then shows a dashboard a reader can use: the board, a detail view for each protocol, and the steps to farm it. Built by an AI agent for make.fun's "Build the best token launch radar" bounty, $1,325 in USDC.
 
-## The model (radar-3)
+## The model (radar-4)
 
 A fitted size curve, calibrated from the snapshot itself. The multiple is not
 a hand-set number: it is log(market cap) = 6.9646 + 0.5223 × log(TVL), fit by
@@ -40,6 +40,36 @@ negative and flips sign across folds — so fitting them would be fitting
 noise, and the dashboard says so. The priors cost a little out-of-sample
 accuracy (1.224 bare to 1.326 with them); the table shows that instead of
 hiding it.
+
+### What radar-4 adds: walk-forward validation, ablation, and a refit sandbox
+
+The board is unchanged — radar-4 prices every row with the same curve and
+priors, because every candidate change was tested and rejected (below). What
+is new is the validation behind the board. **Walk-forward validation** fits
+the curve on listings before a cutoff and tests it on listings after it, at
+three cutoffs, over the 95 comparables with a listing date (the 33 without
+one cannot be ordered in time and sit outside the splits). Median |log
+error| / within 2× for the bare curve: 1.069 / 37.3% at 2024-01-01 (44 fit,
+51 tested), 1.124 / 25.8% at 2025-01-01 (64 fit, 31 tested), 1.605 / 26.3%
+at 2025-07-01 (76 fit, 19 tested); pooled over all 101 test predictions
+1.129 / 31.7%, and 1.146 / 29.7% for the full formula. Read it honestly:
+the test market cap is the snapshot-date market cap, so this tests whether
+a curve fit on older listings predicts the *current* market cap of newer
+listings, not a launch-day prediction.
+
+**Term-by-term ablation** (LOO / walk-forward pooled): curve alone 1.224 /
+1.129, +growth 1.328 / 1.102, +maturity 1.326 / 2.139, +breadth 1.280 /
+1.248, all three fitted 1.320 / 1.710. Every fitted term hurts
+leave-one-out, and their coefficients flip sign across the time splits
+(growth −1.39 → −0.71 → +0.01 on the three training sets, −2.37 on all 128;
+maturity +2.14 → +6.04 → +1.24, −0.60 on all 128) — fitting them would be
+fitting noise, so none is adopted. **Shrunk category shifts** (category
+intercepts shrunk toward the global curve, n/(n+k)) were also tested and
+rejected: LOO 1.337 (k=5) / 1.332 (k=10) / 1.292 (k=20) / 1.271 (k=50)
+against 1.224 bare, and walk-forward pooled 1.169 against 1.129. The
+dashboard shows all of this, plus a **live refit sandbox**: intercept and
+slope sliders re-price the board in-page (same bounded priors), with a
+reset to the fitted curve.
 
 ## The board
 
@@ -75,10 +105,10 @@ the same snapshot always writes the same bytes.
 
 - `main.ts` — the program: reads the snapshot, writes the board, the data
   and the dossier.
-- `lib/model.ts` — the radar-3 model, the calibration, the farm plans.
+- `lib/model.ts` — the radar-4 model, the calibration, the farm plans.
 - `dashboard/` — the static page: `index.html`, `app.css`, `app.js`. No
   network, no framework.
-- `screenshots/` — the board, a protocol's detail view, a filtered view.
+- `screenshots/` — the board, a protocol's detail view, a filtered view, and the validation panel with the refit sandbox.
 - `vendor/makefun-board.ts` — make.fun's dossier library, as shipped.
 
 ---

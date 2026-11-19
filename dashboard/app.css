@@ -107,8 +107,18 @@ td .verdict + .sub{display:block;margin-top:3px}
 .formula{font-size:13px;line-height:1.8;color:var(--amber);background:var(--bg);
   border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:6px;
   padding:14px 16px;overflow-wrap:anywhere}
-.calib td:nth-child(2),.calib td:nth-child(3),.calib td:nth-child(4){text-align:right;font-family:var(--mono)}
+.calib td:nth-child(n+2){text-align:right;font-family:var(--mono)}
 .calib th:nth-child(n+2){text-align:right}
+.calib tr.pooled td{font-weight:700;color:var(--ink);border-top:2px solid var(--amber-dim)}
+
+/* refit sandbox */
+.sandbox{display:grid;gap:12px}
+.sandbox-controls{display:flex;flex-wrap:wrap;gap:18px;align-items:end}
+.sandbox-controls label{display:grid;gap:6px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.sandbox-controls input[type=range]{width:220px;accent-color:var(--amber)}
+.sandbox-controls output{font-family:var(--mono);color:var(--ink);font-size:13px;text-transform:none;letter-spacing:0}
+.sandbox-controls button{min-height:34px;padding:0 14px;border:1px solid var(--amber);border-radius:6px;background:transparent;color:var(--amber)}
+#sb-summary{color:var(--muted)}
 .honest{border-top:1px solid var(--line);padding-top:14px}
 
 /* detail dialog */

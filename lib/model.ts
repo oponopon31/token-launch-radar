@@ -1,4 +1,5 @@
-// The token radar's model, version radar-3: a fitted comparables model.
+// The token radar's model, version radar-4: a fitted comparables model,
+// walk-forward validated.
 //
 // The board ranks every pre-token protocol that could launch — the 40 on the
 // snapshot's watchlist plus every rankable protocol below the floor — and
@@ -15,14 +16,24 @@
 //
 // A bigger protocol is worth fewer dollars per dollar of TVL: the fitted
 // slope is below 1, so the multiple falls as TVL grows. The fit is tested,
-// not asserted: leave-one-out over the same 128 comparables, and 5-fold
-// cross-validation, against a flat global multiple and the category-median
-// multiple of radar-2 — and the full formulas are scored too, so the table
-// shows that the bounded priors cost a little out-of-sample accuracy
-// (1.224 bare to 1.326 with them) instead of hiding it. Growth, maturity and
-// breadth enter only as bounded priors — the blind test finds no stable fitted
-// effect in them (the fitted growth coefficient is negative and flips sign
-// across folds, so fitting it would be fitting noise), and the dashboard says so.
+// not asserted: leave-one-out over the same 128 comparables, 5-fold
+// cross-validation, and — new in radar-4 — walk-forward validation: the
+// curve is fit on listings before a cutoff and tested on listings after it,
+// at three cutoffs, so the test never sees the training listings' dates.
+// The full formulas are scored too, so the table shows that the bounded
+// priors cost a little out-of-sample accuracy (1.224 bare to 1.326 with
+// them) instead of hiding it.
+//
+// Two candidate improvements were tested in radar-4 and REJECTED, and the
+// dashboard says so with their numbers: fitted growth/maturity/breadth
+// terms (every one hurts leave-one-out, and their coefficients flip sign
+// across time splits — fitting them would be fitting noise), and shrunk
+// category shifts (empirical-Bayes partial pooling toward the global curve
+// hurts leave-one-out at every shrinkage strength and hurts every
+// walk-forward split). The board therefore still prices every row with the
+// radar-3 curve and the same bounded priors; radar-4's change is the
+// validation behind it, the ablation table that proves the rejections, and
+// a live refit sandbox on the dashboard.
 //
 //   multiple     = exp(intercept + (slope - 1) * ln(tvl_usd))
 //   growth       = clamp(change_7d, -80, 300) per cent
@@ -121,7 +132,7 @@ export const MODEL: ModelConstants = {
 };
 
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-3';
+export const MODEL_VERSION = 'radar-4';
 
 /** One row of the calibration table the dashboard prints. */
 export interface CategoryMultiple {
@@ -168,6 +179,56 @@ export interface Validation {
   loo: ValidationRow[];
   cv5_median_log_error: number;
   cv5_within_2x: number;
+  walkforward: WalkForward;
+  ablation: AblationRow[];
+  shrunk_loo: ShrunkRow[];
+}
+
+/** One walk-forward split: fit before the cutoff, test after it. */
+export interface WalkForwardSplit {
+  cutoff: string;
+  train_n: number;
+  test_n: number;
+  curve_median_log_error: number;
+  curve_within_2x: number;
+  full_median_log_error: number;
+  full_within_2x: number;
+  /** Bare curve plus a category shift shrunk toward 0 with strength k = 5
+   *  (the same strength the calibration table already uses). */
+  shrunk_median_log_error: number;
+  shrunk_within_2x: number;
+}
+
+/** Walk-forward validation over the dated comparables, plus the pooled test errors. */
+export interface WalkForward {
+  /** Dated comparables the splits run on; the undated ones cannot be ordered in time. */
+  dated_n: number;
+  undated_n: number;
+  splits: WalkForwardSplit[];
+  pooled_curve_median_log_error: number;
+  pooled_curve_within_2x: number;
+  pooled_full_median_log_error: number;
+  pooled_full_within_2x: number;
+  pooled_shrunk_median_log_error: number;
+  pooled_shrunk_within_2x: number;
+  /** Pooled walk-forward test error per ablation term set, same order as the ablation table. */
+  pooled_by_terms: { terms: string; median_log_error: number; within_2x: number }[];
+}
+
+/** One row of the term-by-term ablation table. */
+export interface AblationRow {
+  terms: string;
+  loo_median_log_error: number;
+  loo_within_2x: number;
+  wf_pooled_median_log_error: number;
+  wf_pooled_within_2x: number;
+}
+
+/** Shrunk category shifts at one strength, scored by leave-one-out. */
+export interface ShrunkRow {
+  k: number;
+  loo_median_log_error: number;
+  loo_within_2x: number;
 }
 
 /** A farm step: the action, what it costs, and how long it takes. */
@@ -507,11 +568,11 @@ export function looValidation(comps: SnapshotProtocol[], asOf: string): Validati
   const cat = score(catErrs);
   cat.method = 'Category-median multiple (radar-2)';
   const curve = score(curveErrs);
-  curve.method = 'Fitted size curve (radar-3)';
+  curve.method = 'Fitted size curve (radar-4)';
   const full2 = score(full2Errs);
   full2.method = 'Full radar-2 formula (category median + priors)';
   const full3 = score(full3Errs);
-  full3.method = 'Full radar-3 formula (size curve + priors)';
+  full3.method = 'Full radar-4 formula (size curve + priors)';
   return [flat, cat, curve, full2, full3];
 }
 
@@ -538,6 +599,248 @@ export function cv5Validation(comps: SnapshotProtocol[]): { median_log_error: nu
     median_log_error: round3(sorted[Math.floor(sorted.length / 2)]!),
     within_2x: round3(sorted.filter((e) => e < Math.log(2)).length / sorted.length),
   };
+}
+
+/** One error list scored the same way every table in this file scores it:
+ *  the upper median absolute log error and the share within a factor of 2. */
+function scoreErrors(errs: number[]): { median_log_error: number; within_2x: number } {
+  const sorted = [...errs].map((e) => Math.abs(e)).sort((a, b) => a - b);
+  return {
+    median_log_error: round3(sorted[Math.floor(sorted.length / 2)]!),
+    within_2x: round3(sorted.filter((e) => e < Math.log(2)).length / sorted.length),
+  };
+}
+
+/** A fitted term's feature, in the units the regression sees it. */
+function termFeature(p: SnapshotProtocol, asOf: string, term: 'growth' | 'maturity' | 'breadth'): number {
+  if (term === 'growth') {
+    const g = clamp(finite(p.change_7d, 0), MODEL.growth_floor, MODEL.growth_cap);
+    return Math.tanh(g / MODEL.growth_scale);
+  }
+  if (term === 'maturity') {
+    const age = ageDays(asOf, p.listed_at) ?? MODEL.unknown_age_days;
+    return 1 - Math.exp(-age / MODEL.maturity_scale_days);
+  }
+  return Math.min(Math.max(p.chains.length - 1, 0), MODEL.breadth_max_chains);
+}
+
+/** Solve a small dense linear system by Gaussian elimination with partial pivoting. */
+function solveLinear(a: number[][], b: number[]): number[] {
+  const n = b.length;
+  const m = a.map((row, i) => [...row, b[i]!]);
+  for (let col = 0; col < n; col++) {
+    let piv = col;
+    for (let r = col + 1; r < n; r++) if (Math.abs(m[r]![col]!) > Math.abs(m[piv]![col]!)) piv = r;
+    [m[col], m[piv]] = [m[piv]!, m[col]!];
+    const d = m[col]![col]!;
+    if (d === 0) return Array.from({ length: n }, () => 0);
+    for (let r = col + 1; r < n; r++) {
+      const f = m[r]![col]! / d;
+      for (let c = col; c <= n; c++) m[r]![c] = m[r]![c]! - f * m[col]![c]!;
+    }
+  }
+  const x = Array.from({ length: n }, () => 0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = m[r]![n]!;
+    for (let c = r + 1; c < n; c++) s -= m[r]![c]! * x[c]!;
+    x[r] = s / m[r]![r]!;
+  }
+  return x;
+}
+
+/** Least squares for log(mcap) on log(tvl) plus the named fitted terms. */
+function fitMulti(
+  rows: SnapshotProtocol[],
+  asOf: string,
+  terms: ('growth' | 'maturity' | 'breadth')[],
+): number[] {
+  const d = terms.length + 2;
+  const ata: number[][] = Array.from({ length: d }, () => Array.from({ length: d }, () => 0));
+  const atb: number[] = Array.from({ length: d }, () => 0);
+  for (const p of rows) {
+    const x = [1, Math.log(p.tvl_usd), ...terms.map((t) => termFeature(p, asOf, t))];
+    const y = Math.log(p.mcap_usd!);
+    for (let i = 0; i < d; i++) {
+      atb[i] = atb[i]! + x[i]! * y;
+      for (let j = 0; j < d; j++) ata[i]![j] = ata[i]![j]! + x[i]! * x[j]!;
+    }
+  }
+  return solveLinear(ata, atb);
+}
+
+/** A fitted multi-term model's prediction for one protocol, in log space. */
+function predictMulti(
+  beta: number[],
+  p: SnapshotProtocol,
+  asOf: string,
+  terms: ('growth' | 'maturity' | 'breadth')[],
+): number {
+  let pred = beta[0]! + beta[1]! * Math.log(p.tvl_usd);
+  terms.forEach((t, i) => {
+    pred += beta[i + 2]! * termFeature(p, asOf, t);
+  });
+  return pred;
+}
+
+/** The category-shift map of a training set: each category's mean residual
+ *  from the bare curve, shrunk toward 0 by n / (n + k). */
+function shrunkShifts(
+  train: SnapshotProtocol[],
+  fit: { intercept: number; slope: number },
+  k: number,
+): Map<string, number> {
+  const byCat = new Map<string, number[]>();
+  for (const p of train) {
+    const resid = Math.log(p.mcap_usd!) - (fit.intercept + fit.slope * Math.log(p.tvl_usd));
+    const key = p.category ?? 'Other';
+    const list = byCat.get(key);
+    if (list === undefined) byCat.set(key, [resid]);
+    else list.push(resid);
+  }
+  const shifts = new Map<string, number>();
+  for (const [cat, resids] of byCat) {
+    const mean = resids.reduce((a, b) => a + b, 0) / resids.length;
+    shifts.set(cat, (resids.length / (resids.length + k)) * mean);
+  }
+  return shifts;
+}
+
+/** The term sets the ablation table scores, in the order the table prints them. */
+const ABLATION_SETS: { label: string; terms: ('growth' | 'maturity' | 'breadth')[] }[] = [
+  { label: 'Curve alone', terms: [] },
+  { label: 'Curve + growth', terms: ['growth'] },
+  { label: 'Curve + maturity', terms: ['maturity'] },
+  { label: 'Curve + breadth', terms: ['breadth'] },
+  { label: 'Curve + growth + maturity + breadth', terms: ['growth', 'maturity', 'breadth'] },
+];
+
+/** Walk-forward validation: at each cutoff the curve is fit on listings
+ *  before it and tested on listings after it, so no test listing's date is
+ *  ever in the training set. The 33 comparables with no listing date cannot
+ *  be ordered in time and sit outside the splits; the table says so.
+ *  Honest limit, stated on the dashboard too: the test market cap is the
+ *  snapshot-date market cap, so a split tests whether a curve fit on older
+ *  listings predicts the CURRENT market cap of newer listings — not a
+ *  launch-day prediction. */
+export function walkForwardValidation(comps: SnapshotProtocol[], asOf: string): WalkForward {
+  const dated = comps.filter((p) => p.listed_at !== null);
+  const cutoffs = ['2024-01-01', '2025-01-01', '2025-07-01'];
+  const splits: WalkForwardSplit[] = [];
+  const pooledCurve: number[] = [];
+  const pooledFull: number[] = [];
+  const pooledShrunk: number[] = [];
+  const pooledBySet = new Map<string, number[]>();
+  for (const s of ABLATION_SETS) pooledBySet.set(s.label, []);
+  for (const cutoff of cutoffs) {
+    const train = dated.filter((p) => p.listed_at! < cutoff);
+    const test = dated.filter((p) => p.listed_at! >= cutoff);
+    const fit = fitSizeCurve(train);
+    const shifts = shrunkShifts(train, fit, 5);
+    const curveErrs: number[] = [];
+    const fullErrs: number[] = [];
+    const shrunkErrs: number[] = [];
+    for (const p of test) {
+      const actual = Math.log(p.mcap_usd!);
+      const base = fit.intercept + fit.slope * Math.log(p.tvl_usd);
+      curveErrs.push(base - actual);
+      const v = impliedValue(p, asOf, fit);
+      fullErrs.push(Math.log(v.implied) - actual);
+      shrunkErrs.push(base + (shifts.get(p.category ?? 'Other') ?? 0) - actual);
+    }
+    for (const s of ABLATION_SETS) {
+      const beta = fitMulti(train, asOf, s.terms);
+      const errs = pooledBySet.get(s.label)!;
+      for (const p of test) errs.push(predictMulti(beta, p, asOf, s.terms) - Math.log(p.mcap_usd!));
+    }
+    pooledCurve.push(...curveErrs);
+    pooledFull.push(...fullErrs);
+    pooledShrunk.push(...shrunkErrs);
+    const curve = scoreErrors(curveErrs);
+    const full = scoreErrors(fullErrs);
+    const shrunk = scoreErrors(shrunkErrs);
+    splits.push({
+      cutoff,
+      train_n: train.length,
+      test_n: test.length,
+      curve_median_log_error: curve.median_log_error,
+      curve_within_2x: curve.within_2x,
+      full_median_log_error: full.median_log_error,
+      full_within_2x: full.within_2x,
+      shrunk_median_log_error: shrunk.median_log_error,
+      shrunk_within_2x: shrunk.within_2x,
+    });
+  }
+  const pooledCurveScore = scoreErrors(pooledCurve);
+  const pooledFullScore = scoreErrors(pooledFull);
+  const pooledShrunkScore = scoreErrors(pooledShrunk);
+  const pooledByTerms: { terms: string; median_log_error: number; within_2x: number }[] = ABLATION_SETS.map((s) => {
+    const pooled = scoreErrors(pooledBySet.get(s.label)!);
+    return {
+      terms: s.label,
+      median_log_error: pooled.median_log_error,
+      within_2x: pooled.within_2x,
+    };
+  });
+  return {
+    dated_n: dated.length,
+    undated_n: comps.length - dated.length,
+    splits,
+    pooled_curve_median_log_error: pooledCurveScore.median_log_error,
+    pooled_curve_within_2x: pooledCurveScore.within_2x,
+    pooled_full_median_log_error: pooledFullScore.median_log_error,
+    pooled_full_within_2x: pooledFullScore.within_2x,
+    pooled_shrunk_median_log_error: pooledShrunkScore.median_log_error,
+    pooled_shrunk_within_2x: pooledShrunkScore.within_2x,
+    pooled_by_terms: pooledByTerms,
+  };
+}
+
+/** Term-by-term ablation: each term set scored by leave-one-out over all
+ *  128 comparables and by the pooled walk-forward test errors. Every fitted
+ *  term hurts leave-one-out, and the walk-forward pooled errors agree —
+ *  growth's small pooled gain (1.102 vs 1.129) comes with a worse
+ *  within-2× share and flips sign across the splits, so no fitted term is
+ *  adopted. The table prints the numbers instead of hiding them. */
+export function ablationValidation(comps: SnapshotProtocol[], asOf: string, wf?: WalkForward): AblationRow[] {
+  const walkforward = wf ?? walkForwardValidation(comps, asOf);
+  return ABLATION_SETS.map((s, i) => {
+    const errs: number[] = [];
+    for (let j = 0; j < comps.length; j++) {
+      const held = comps[j]!;
+      const rest = comps.filter((_, k) => k !== j);
+      const beta = fitMulti(rest, asOf, s.terms);
+      errs.push(predictMulti(beta, held, asOf, s.terms) - Math.log(held.mcap_usd!));
+    }
+    const loo = scoreErrors(errs);
+    const pooled = walkforward.pooled_by_terms[i]!;
+    return {
+      terms: s.label,
+      loo_median_log_error: loo.median_log_error,
+      loo_within_2x: loo.within_2x,
+      wf_pooled_median_log_error: pooled.median_log_error,
+      wf_pooled_within_2x: pooled.within_2x,
+    };
+  });
+}
+
+/** Shrunk category shifts by leave-one-out: the bare curve plus a category
+ *  intercept shrunk toward 0 by n / (n + k). At every strength the shifts
+ *  hurt — the category means are mostly noise next to a residual SD above
+ *  2 in log space — so they are not adopted. */
+export function shrunkValidation(comps: SnapshotProtocol[], _asOf: string): ShrunkRow[] {
+  return [5, 10, 20, 50].map((k) => {
+    const errs: number[] = [];
+    for (let i = 0; i < comps.length; i++) {
+      const held = comps[i]!;
+      const rest = comps.filter((_, j) => j !== i);
+      const fit = fitSizeCurve(rest);
+      const shifts = shrunkShifts(rest, fit, k);
+      const pred = fit.intercept + fit.slope * Math.log(held.tvl_usd) + (shifts.get(held.category ?? 'Other') ?? 0);
+      errs.push(pred - Math.log(held.mcap_usd!));
+    }
+    const score = scoreErrors(errs);
+    return { k, loo_median_log_error: score.median_log_error, loo_within_2x: score.within_2x };
+  });
 }
 
 /** The size curve's fit diagnostics, including a bootstrap interval for the slope. */
@@ -902,10 +1205,14 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
   const fit = fitSizeCurve(comps);
   const diagnostics = fitDiagnostics(comps, model);
   const cv5 = cv5Validation(comps);
+  const walkforward = walkForwardValidation(comps, snapshot.as_of);
   const validation: Validation = {
     loo: looValidation(comps, snapshot.as_of),
     cv5_median_log_error: cv5.median_log_error,
     cv5_within_2x: cv5.within_2x,
+    walkforward,
+    ablation: ablationValidation(comps, snapshot.as_of, walkforward),
+    shrunk_loo: shrunkValidation(comps, snapshot.as_of),
   };
   const calibration = calibrate(snapshot, model);
   const candidates = snapshot.protocols.filter((p) => {

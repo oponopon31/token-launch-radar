@@ -38,16 +38,17 @@
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function chainsShort(ch) { return ch && ch.length ? esc(ch.slice(0, 2).join(', ') + (ch.length > 2 ? ' +' + (ch.length - 2) : '')) : '—'; }
 
-  /* ---------- model radar-3 ---------- */
+  /* ---------- model radar-4 ---------- */
   function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
-  function sizeMultiple(tvl) { return Math.exp(F.intercept + (F.slope - 1) * Math.log(tvl)); }
-  function impliedOf(r) {
+  function sizeMultiple(tvl, fit) { fit = fit || F; return Math.exp(fit.intercept + (fit.slope - 1) * Math.log(tvl)); }
+  function impliedOf(r, fit) {
+    fit = fit || F;
     var growth = clamp(r.change_7d === null || r.change_7d === undefined ? 0 : r.change_7d, M.growth_floor, M.growth_cap);
     var growthMult = 1 + M.growth_weight * Math.tanh(growth / M.growth_scale);
     var age = (r.age_days === null || r.age_days === undefined) ? M.unknown_age_days : r.age_days;
     var maturity = M.maturity_floor + M.maturity_range * (1 - Math.exp(-age / M.maturity_scale_days));
     var breadth = 1 + M.breadth_per_chain * Math.min(Math.max(r.chains.length - 1, 0), M.breadth_max_chains);
-    var multiple = sizeMultiple(r.tvl_usd);
+    var multiple = sizeMultiple(r.tvl_usd, fit);
     return { implied: Math.max(1, Math.round(r.tvl_usd * multiple * growthMult * maturity * breadth)),
       multiple: multiple, growthPct: growth, growthMult: growthMult, maturity: maturity, breadth: breadth, age: age };
   }
@@ -266,6 +267,64 @@
     }).join('');
   }
 
+  /* ---------- walk-forward, ablation, shrunk shifts, sandbox ---------- */
+  function renderValidation() {
+    var wf = D.validation.walkforward;
+    var bare = D.validation.loo[2];
+    $('wf-body').innerHTML = wf.splits.map(function (s) {
+      return '<tr><td>' + esc(s.cutoff) + '</td><td>' + s.train_n + ' → ' + s.test_n + '</td><td>' +
+        s.curve_median_log_error.toFixed(3) + '</td><td>' + (s.curve_within_2x * 100).toFixed(1) + '%</td><td>' +
+        s.full_median_log_error.toFixed(3) + '</td><td>' + s.shrunk_median_log_error.toFixed(3) + '</td></tr>';
+    }).join('') +
+      '<tr class="pooled"><td>Pooled</td><td>' + wf.dated_n + ' dated comparables, 101 test predictions</td><td>' +
+      wf.pooled_curve_median_log_error.toFixed(3) + '</td><td>' + (wf.pooled_curve_within_2x * 100).toFixed(1) + '%</td><td>' +
+      wf.pooled_full_median_log_error.toFixed(3) + '</td><td>' + wf.pooled_shrunk_median_log_error.toFixed(3) + '</td></tr>';
+    $('ablation-body').innerHTML = D.validation.ablation.map(function (a) {
+      return '<tr><td>' + esc(a.terms) + '</td><td>' + a.loo_median_log_error.toFixed(3) + '</td><td>' +
+        (a.loo_within_2x * 100).toFixed(1) + '%</td><td>' + a.wf_pooled_median_log_error.toFixed(3) + '</td><td>' +
+        (a.wf_pooled_within_2x * 100).toFixed(1) + '%</td></tr>';
+    }).join('');
+    var sh = D.validation.shrunk_loo;
+    $('shrunk-line').textContent = 'Category intercepts shrunk toward the global curve were tested at four strengths and hurt at every one: leave-one-out median log error ' +
+      sh.map(function (r) { return 'k=' + r.k + ' ' + r.loo_median_log_error.toFixed(3); }).join(', ') +
+      ' against ' + bare.median_log_error.toFixed(3) + ' for the bare curve, and walk-forward pooled ' +
+      wf.pooled_shrunk_median_log_error.toFixed(3) + ' against ' + wf.pooled_curve_median_log_error.toFixed(3) +
+      ' — the category means are mostly noise next to a residual standard deviation above 2 in log space — so the board uses no category shift.';
+    initSandbox();
+  }
+  function renderSandbox() {
+    var intercept = parseFloat($('sb-intercept').value);
+    var slope = parseFloat($('sb-slope').value);
+    $('sb-intercept-out').textContent = intercept.toFixed(4);
+    $('sb-slope-out').textContent = slope.toFixed(4);
+    var fit = { intercept: intercept, slope: slope };
+    var scored = D.rows.map(function (r) {
+      return { r: r, implied: impliedOf(r, fit).implied };
+    }).sort(function (a, b) { return b.implied - a.implied || (a.r.slug < b.r.slug ? -1 : 1); });
+    var changed = 0;
+    scored.forEach(function (s, i) { if (s.r.rank !== i + 1) changed++; });
+    var top = scored.slice(0, 10);
+    $('sb-body').innerHTML = top.map(function (s, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(s.r.name) + '</td><td>' + s.r.rank + '</td><td>' + fmtUsd(s.implied) + '</td></tr>';
+    }).join('');
+    var isFitted = Math.abs(intercept - F.intercept) < 0.0005 && Math.abs(slope - F.slope) < 0.0005;
+    $('sb-summary').textContent = isFitted
+      ? 'At the fitted curve the sandbox matches the board exactly: rank 1 is ' + top[0].r.name + ' at ' + fmtUsd(top[0].implied) + '.'
+      : changed + ' of ' + D.rows.length + ' rows change rank under your curve; rank 1 is ' + top[0].r.name + ' at ' + fmtUsd(top[0].implied) + '.';
+  }
+  function initSandbox() {
+    $('sb-intercept').value = String(F.intercept);
+    $('sb-slope').value = String(F.slope);
+    $('sb-intercept').addEventListener('input', renderSandbox);
+    $('sb-slope').addEventListener('input', renderSandbox);
+    $('sb-reset').addEventListener('click', function () {
+      $('sb-intercept').value = String(F.intercept);
+      $('sb-slope').value = String(F.slope);
+      renderSandbox();
+    });
+    renderSandbox();
+  }
+
   /* ---------- detail dialog ---------- */
   var dialog = $('detail');
   function openDetail(slug) {
@@ -363,6 +422,7 @@
     });
     window.addEventListener('hashchange', function () { readHash(); $('q').value = state.q; $('category').value = state.category; renderTabs(); if (state.selected) openDetail(state.selected); });
     renderModel();
+    renderValidation();
     renderTabs();
     if (state.selected) openDetail(state.selected);
   }
