@@ -1,4 +1,4 @@
-// Token Radar, model radar-6 (Node 22, standard library only).
+// Token Radar, model radar-7 (Node 22, standard library only).
 //
 // Reads the sealed snapshot from /input/snapshot.json (or --input <file|dir>),
 // scores every pre-token protocol with the comparables model in lib/model.ts,

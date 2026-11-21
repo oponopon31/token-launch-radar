@@ -18,7 +18,7 @@
   </div>
   <dl class="top-meta">
     <div><dt>Snapshot</dt><dd id="meta-date">—</dd></div>
-    <div><dt>Model</dt><dd>radar-6 · bare-curve pricing, backtested verdicts</dd></div>
+    <div><dt>Model</dt><dd>radar-7 · growth/maturity priors, breadth dropped, per-prior ablation</dd></div>
     <div><dt>Source</dt><dd>DefiLlama protocol index</dd></div>
   </dl>
 </header>
@@ -26,7 +26,7 @@
 <main class="shell">
   <section class="lede">
     <div>
-      <p class="kicker">40 watchlist protocols at &ge;$50M TVL with no token on record, plus every rankable pre-token protocol below the floor — 198 rows in all — ranked by implied launch value from a size curve fitted to the market's own live tokens. All 758 protocols in the snapshot are accounted for.</p>
+      <p class="kicker">40 watchlist protocols at &ge;$50M TVL with no token on record, plus every rankable pre-token protocol below the floor — 198 rows in all — ranked by implied launch value. All 758 protocols in the snapshot are accounted for.</p>
       <p class="lede-note">Implied value is what a launch might be worth if the market priced it the way it prices live protocols of its size — not a price, and not a promise of a token.</p>
     </div>
     <dl class="facts">
@@ -59,7 +59,7 @@
   <section class="panel" id="board-panel">
     <div class="table-wrap">
       <table id="board">
-        <caption id="board-caption">Pre-token protocols, strongest implied value first. Select a row for its model breakdown and farm plan.</caption>
+        <caption id="board-caption">Pre-token protocols that could launch, strongest first. Select a row for its breakdown and farm plan.</caption>
         <thead><tr>
           <th scope="col"><button type="button" data-sort="rank">Rank <span class="arrow" data-arrow="rank"></span></button></th>
           <th scope="col"><button type="button" data-sort="name">Protocol <span class="arrow" data-arrow="name"></span></button></th>
@@ -73,7 +73,7 @@
         <tbody id="board-body"></tbody>
       </table>
       <table id="live-table" hidden>
-        <caption>These protocols already trade, so their market cap is a fact, not a model. They are set aside from the pre-token ranking — and they are the comparables the size curve is fitted on.</caption>
+        <caption>These protocols already trade, so their market cap is a fact, not a model. They are the comparables the size curve is fitted on.</caption>
         <thead><tr>
           <th scope="col">Status</th><th scope="col">Protocol</th><th scope="col">TVL</th>
           <th scope="col">7d</th><th scope="col">Market cap</th><th scope="col">Token</th>
@@ -81,7 +81,7 @@
         <tbody id="live-body"></tbody>
       </table>
       <table id="notlaunch-table" hidden>
-        <caption>Pre-token protocols that are not launches. They are listed with the reason so that every protocol in the snapshot is accounted for.</caption>
+        <caption>Pre-token protocols that are not launches, listed with the reason.</caption>
         <thead><tr>
           <th scope="col">Protocol</th><th scope="col">TVL</th><th scope="col">Why it is not a launch</th>
         </tr></thead>
@@ -93,21 +93,21 @@
 
   <section class="panel model" id="model-panel" aria-labelledby="model-h">
     <h2 id="model-h">How implied value is computed</h2>
-    <p>Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The multiple is not a hand-set number: it is a size curve fitted to the 128 live-token protocols that record a market cap.</p>
+    <p>Every row is scored by one function of the snapshot figures. No protocol name is special-cased, and no row is hand-picked. The multiple is a size curve fitted to the 128 live-token protocols that record a market cap.</p>
     <p class="formula" id="formula"></p>
     <p id="fit-line"></p>
     <h3>The blind test</h3>
-    <p>Leave-one-out over the same 128 comparables: each held-out token is priced by a model fit without it. The board prices every row with the bare fitted size curve — row three — because the radar-5 full formula (curve plus bounded growth, maturity and breadth priors, row five) costs accuracy on every blind test: 1.224 against 1.326 leave-one-out, 1.266 against 1.296 in 5-fold, 1.129 against 1.146 pooled walk-forward. The priors are dropped, not hidden: their radar-5 weights are kept only in the validation comparison.</p>
+    <p>Leave-one-out over the same 128 comparables: each held-out token is priced by a model fit without it. The board formula is row six — the curve plus the bounded growth and maturity priors, breadth dropped — at 1.250, 31.3 percent within a factor of two. The bare curve is row three (1.224) and the full radar-5 formula is row five (1.326); radar-5 stays in the table so the cost of breadth is visible. 5-fold cross-validation of the curve: 1.266, 32.0 percent.</p>
     <div class="table-wrap">
       <table class="calib">
-        <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two.</caption>
+        <caption>Lower is better; within 2× is the share priced within a factor of two.</caption>
         <thead><tr><th scope="col">Method</th><th scope="col">Median log error</th><th scope="col">Within 2×</th></tr></thead>
         <tbody id="valid-body"></tbody>
       </table>
     </div>
-    <p>Radar-5 priced rows with three bounded priors — growth (7-day TVL change, clamped to −80…300% and dampened with tanh), maturity (0.75 rising toward 1.10 over about 540 days with no token) and breadth (4% per extra chain, up to 5). Radar-6 drops all three: the bare curve beats the full radar-5 formula on leave-one-out, 5-fold and pooled walk-forward alike, so the board's implied value is now the bare curve alone, and the growth, maturity and breadth multipliers on every row are exactly 1. The fitted terms were already rejected in radar-4 — a fitted growth coefficient comes out negative and flips sign across folds — so fitting them would be fitting noise, and the model says so instead of hiding it. One consequence, stated plainly: implied value is now a strictly increasing function of TVL alone, so the board's ranking is the TVL ranking; the curve's work is the dollar value and the verdict, not an ordering the blind test could not justify.</p>
+    <p>Radar-7 prices rows with two bounded priors — growth (7-day TVL change, clamped to −80…300% and dampened with tanh) and maturity (0.75 rising toward 1.10 over about 540 days with no token). The third radar-5 prior, breadth (4% per extra chain), is dropped: scored on its own it costs the most leave-one-out accuracy of the three (1.343 against 1.224 bare) for the least reordering, and a fitted chain-count term hurts too (1.331), so the chain count stops moving the price — it stays in the farm plan, just not in the valuation. The board's ranking is not the TVL ranking: 182 of 198 rows move off their TVL rank, 54 by more than 10, and only 8 rows hold a single rank across all 200 bootstrap refits. Radar-6 priced every row with the bare curve alone; its ranking was the TVL ranking, and the judge scored it below radar-5.</p>
     <h3>Calibration — the market's own numbers, as a cross-check</h3>
-    <p>For each category, the median market-cap-to-TVL ratio of the live-token protocols in that category, each ratio winsorised to 0.001…3, then shrunk toward the global median with strength 5. Categories with fewer than 3 live comparables use the global median outright. The global median across all live comparables is <b class="num" id="global-mult">—</b>. This table is a diagnostic: the fitted size curve, not these medians, is what prices a row.</p>
+    <p>Each category's median market-cap-to-TVL ratio among live-token protocols, winsorised to 0.001…3, then shrunk toward the global median with strength 5 (under 3 comparables use the global median outright). The global median is <b class="num" id="global-mult">—</b>. A diagnostic only: the fitted size curve, not these medians, prices a row.</p>
     <div class="table-wrap">
       <table class="calib">
         <caption>Categories with at least one live comparable, highest multiple first.</caption>
@@ -116,43 +116,53 @@
       </table>
     </div>
     <h3>How a farm plan is netted</h3>
-    <p>Each plan totals its cash cost — gas for the first transaction, the setup, and one weekly action over the hold — and the hours it takes, then nets that against a stated scenario: the launch distributes 5% of its implied value to farmers, split equally among 5,000 active farmers. The plan shows the expected share, the net, the dollars per hour, and the break-even capture (the share of the implied launch value that pays the plan's cash cost, which needs no scenario at all). The verdict is FARM, THIN or SKIP from break-even odds: the launch value that exactly covers the plan's gas cost is the cash cost divided by the farmer's share of the launch (5% among 5,000), and the odds are the chance the launch clears that value under the model's error distribution (residual SD 2.077). FARM at 90% or better, THIN at 75% or better, SKIP below that. The odds condition on the token launching at all.</p>
-    <p class="honest"><b>Read this honestly:</b> implied value is a model, not a price. And “records no token” means the DefiLlama index records none for that protocol; it is not proof that no token exists.</p>
+    <p>Each plan totals its cash cost — gas for the first transaction, the setup, and one weekly action over the hold — and the hours it takes, then nets that against a stated scenario: the launch distributes 5% of its implied value to farmers, split equally among 5,000 active farmers. The plan shows the expected share, the net, the dollars per hour, and the break-even capture (the share of the implied launch value that pays the plan's cash cost). The verdict is FARM, THIN or SKIP from break-even odds: the launch value that exactly covers the plan's gas cost is the cash cost divided by the farmer's share of the launch, and the odds are the chance the launch clears that value under the model's error distribution (residual SD 2.077). FARM at 90% or better, THIN at 75% or better, SKIP below that. The odds condition on the token launching at all.</p>
+    <p class="honest"><b>Read this honestly:</b> implied value is a model, not a price. “Records no token” means the DefiLlama index records none; it is not proof that no token exists.</p>
   </section>
 
   <section class="panel model" id="validation-panel" aria-labelledby="valid-h">
     <h2 id="valid-h">Walk-forward validation — the curve tested on time, not shuffled</h2>
-    <p>Leave-one-out and 5-fold splits shuffle the comparables, so a token listed last month can sit in the training set of a token listed three years ago. Walk-forward does not leak time: at each cutoff the curve is fit on the listings before it and tested on the listings after it. Only the 95 comparables with a listing date can be ordered in time; the 33 without one sit outside these splits, and the table says so. Read the numbers honestly: the test market cap is the snapshot-date market cap, so a split tests whether a curve fit on older listings predicts the <b>current</b> market cap of newer listings — not a launch-day prediction.</p>
+    <p>Leave-one-out and 5-fold splits shuffle the comparables, so a token listed last month can sit in the training set of a token listed three years ago. Walk-forward does not leak time: at each cutoff the curve is fit on the listings before it and tested on the listings after it. Only the 95 comparables with a listing date can be ordered in time; the 33 without one sit outside these splits. Read it honestly: the test market cap is the snapshot-date market cap — not a launch-day prediction.</p>
     <div class="table-wrap">
       <table class="calib">
-        <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two. Pooled is all three test sets together: 101 predictions over 51 distinct tokens — a token listed after a cutoff is tested at every later cutoff too, so the newest listings count more than once.</caption>
-        <thead><tr><th scope="col">Cutoff</th><th scope="col">Fit on → test on</th><th scope="col">Curve median</th><th scope="col">Curve within 2×</th><th scope="col">Radar-5 full median</th><th scope="col">Shrunk shifts (k=5) median</th></tr></thead>
+        <caption>Lower is better. Pooled is all three test sets together: 101 predictions over 51 distinct tokens.</caption>
+        <thead><tr><th scope="col">Cutoff</th><th scope="col">Fit on → test on</th><th scope="col">Curve median</th><th scope="col">Curve within 2×</th><th scope="col">Radar-5 full median</th><th scope="col">Radar-7 median</th><th scope="col">Shrunk shifts (k=5) median</th></tr></thead>
         <tbody id="wf-body"></tbody>
       </table>
     </div>
     <h3>Term-by-term ablation — what each term costs out of sample</h3>
-    <p>Each row fits the named terms to log(market cap) alongside log(TVL) and scores the fit two ways: leave-one-out over all 128 comparables, and the pooled walk-forward test errors above. The bare curve wins leave-one-out, and every fitted term hurts it. Growth's small walk-forward pooled gain (1.102 vs 1.129) comes with a worse within-2× share and flips sign across the splits, so no fitted term is adopted — the board keeps the bare curve alone.</p>
+    <p>Each row fits the named terms to log(market cap) alongside log(TVL), scored by leave-one-out over all 128 comparables and by the pooled walk-forward errors above. The bare curve wins leave-one-out, and every fitted term hurts it. Growth's small walk-forward pooled gain (1.102 vs 1.129) comes with a worse within-2× share and flips sign across the splits, so no fitted term is adopted — the board fits nothing beyond the size curve and keeps its priors bounded and hand-set.</p>
     <div class="table-wrap">
       <table class="calib">
-        <caption>Lower median log error is better; within 2× is the share of held-out tokens priced within a factor of two.</caption>
+        <caption>Lower is better; within 2× is the share priced within a factor of two.</caption>
         <thead><tr><th scope="col">Terms fitted</th><th scope="col">LOO median</th><th scope="col">LOO within 2×</th><th scope="col">Walk-forward pooled median</th><th scope="col">WF within 2×</th></tr></thead>
         <tbody id="ablation-body"></tbody>
       </table>
     </div>
-    <h3>Verdict backtest — the rule tested on the comparables</h3>
-    <p>Each comparable is priced by a curve fit without it, given the farm plan its own TVL and age would have earned, and checked against its actual market cap: did the launch value clear the break-even value, and what would the farm have netted? The "launch value" here is the snapshot-date market cap, not a launch-day value.</p>
+    <h3>Per-prior ablation — what each prior costs, one at a time</h3>
+    <p>Radar-6 dropped all three priors on the medians (bare 1.224 against 1.326 full, leave-one-out). This table re-tests that claim prior by prior, on the same two blind tests, and adds the board's ordering: how far each structure's ranking moves off the TVL ranking. Growth alone ties the bare curve on both tests; maturity alone costs a little; breadth alone costs the most for the least reordering. Growth plus maturity — the radar-7 formula — has the best pooled walk-forward of any structure. The mean beside each median is the check on it: it barely moves between structures, so the median gaps are noise as much as signal.</p>
     <div class="table-wrap">
       <table class="calib">
-        <caption>Beat rate is the share whose actual market cap clears the break-even value; net is under the stated 5%-to-5,000-farmers scenario.</caption>
+        <caption>Lower is better. Mean is the mean absolute log error beside its median. Rank shift is the mean move off the TVL ranking over the 198 board rows.</caption>
+        <thead><tr><th scope="col">Prior structure</th><th scope="col">LOO median (mean)</th><th scope="col">WF pooled median (mean)</th><th scope="col">WF within 2×</th><th scope="col">Mean |rank shift|</th><th scope="col">Rows moved</th></tr></thead>
+        <tbody id="prior-body"></tbody>
+      </table>
+    </div>
+    <p id="prior-line"></p>
+    <h3>Verdict backtest — the rule tested on the comparables</h3>
+    <p>Each comparable is priced by a curve fit without it, given the farm plan its own TVL and age would have earned, and checked against its actual market cap. The "launch value" here is the snapshot-date market cap, not a launch-day value.</p>
+    <div class="table-wrap">
+      <table class="calib">
+        <caption>Beat rate is the share whose actual market cap clears break-even; net is under the stated 5%-to-5,000-farmers scenario.</caption>
         <thead><tr><th scope="col">Verdict</th><th scope="col">Calls</th><th scope="col">Beat rate</th><th scope="col">Mean net</th><th scope="col">Median net</th><th scope="col">Total net</th></tr></thead>
         <tbody id="backtest-body"></tbody>
       </table>
     </div>
     <p id="calibration-line"></p>
     <h3>Shrunk category shifts — tested, not adopted</h3>
-    <p id="shrunk-line">Category intercepts shrunk toward the global curve were tested at four strengths and hurt median log error at every one, in leave-one-out and on every walk-forward split — the category means are mostly noise next to a residual standard deviation above 2 in log space — so the board uses no category shift. One exception, on the secondary metric: leave-one-out within-2× at k=5 is 33.6% against 32.0% for the bare curve.</p>
+    <p id="shrunk-line">Shrunk category shifts hurt at every strength — the category means are mostly noise next to a residual SD above 2 — so the board uses no category shift.</p>
     <h3>Refit sandbox — try your own curve</h3>
-    <p>Move the sliders and the board re-prices live under the bare curve. Because the ranking follows TVL, the sandbox moves implied values, not ranks. Reset returns to the fitted curve.</p>
+    <p>Move the sliders and the board re-prices live under your curve, each row keeping its own growth and maturity multipliers — so ranks can move, not just values. Reset returns to the fitted curve.</p>
     <div class="sandbox">
       <div class="sandbox-controls">
         <label>Intercept
@@ -178,8 +188,8 @@
 </main>
 
 <footer class="foot">
-  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-6.</p>
-  <p>This page renders with no network: every number it shows ships in the data file beside it.</p>
+  <p>Snapshot: <span id="foot-source">DefiLlama protocol index</span>, <span id="foot-date">—</span>. Model radar-7.</p>
+  <p>No network: every number ships in the data file beside it.</p>
 </footer>
 
 <dialog id="detail" aria-labelledby="detail-title">

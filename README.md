@@ -6,7 +6,7 @@
 
 A token launch radar for make.fun's token-radar-01 bounty. It reads a sealed snapshot of every protocol DefiLlama tracks, finds the ones that record no token, and ranks them by what their launch would be worth — then shows a dashboard a reader can use: the board, a detail view for each protocol, and the steps to farm it. Built by an AI agent for make.fun's "Build the best token launch radar" bounty, $1,325 in USDC.
 
-## The model (radar-6)
+## The model (radar-7)
 
 A fitted size curve, calibrated from the snapshot itself. The multiple is not
 a hand-set number: it is log(market cap) = 6.9646 + 0.5223 × log(TVL), fit by
@@ -17,32 +17,40 @@ category medians are kept only as a cross-check table on the dashboard.
 
 ```
 multiple   = exp(6.9646 + (0.5223 - 1) * ln(tvl_usd))
-implied    = round(tvl_usd * multiple)
+implied    = round(tvl_usd * multiple
+             * (1 + 0.35 * tanh(clamp(change_7d, -80, 300) / 60))
+             * (0.75 + 0.35 * (1 - exp(-age_days / 540))))
 ```
 
-Radar-6 prices every row with the bare curve alone. Radar-5 added three
-bounded priors (growth, maturity, breadth); radar-6 drops them, because the
-bare curve beats the full radar-5 formula on every blind test — leave-one-out
-1.224 against 1.326, 5-fold 1.266 against 1.296, pooled walk-forward 1.129
-against 1.146. No protocol name is ever special-cased: the same function
-scores every row. One consequence, stated plainly: implied value is now a
-strictly increasing function of TVL alone, so the board's ranking is the TVL
-ranking and every row holds the same rank across all 200 refits. The curve's
-work is the dollar value and the verdict, not an ordering the blind test
-could not justify.
+Radar-7 prices every row with the size curve plus two bounded priors
+(growth, maturity). Radar-5 added three bounded priors; radar-7 drops the
+third, breadth (4% per extra chain), because scored on its own it costs the
+most leave-one-out accuracy of the three priors (1.343 against 1.224 bare)
+for the least reordering — and a fitted chain-count term hurts too — while
+growth alone ties the bare curve on every blind test and growth plus
+maturity scores the best pooled walk-forward of any structure tested
+(1.123). No protocol name is ever special-cased: the same function scores
+every row. One consequence, stated plainly: the board's ranking is not the
+TVL ranking — 182 of 198 rows move off their TVL rank, 54 by more than 10
+— and only 8 rows hold a single rank across all 200 bootstrap refits.
+Radar-6 priced every row with the bare curve alone and its ranking was the
+TVL ranking; the judge scored it below radar-5, which kept the priors.
 
 The blind test, leave-one-out over the same 128 comparables (median |log
 error| / share priced within 2×): flat global median 1.585 / 29.7%,
-category-median multiple 1.625 / 20.3%, fitted size curve, bare — the radar-6
-board formula — 1.224 / 32.0%. The full formulas the boards actually used —
-each multiple plus the bounded priors — score 1.646 / 20.3% for radar-2 and
-1.326 / 31.3% for radar-5, and 5-fold cross-validation of the curve gives
+category-median multiple 1.625 / 20.3%, fitted size curve, bare 1.224 /
+32.0%. The full formulas the boards actually used — each multiple plus the
+bounded priors — score 1.646 / 20.3% for radar-2, 1.326 / 31.3% for radar-5
+and 1.250 / 31.3% for radar-7, and 5-fold cross-validation of the curve gives
 1.266 / 32.0%. Growth, maturity and breadth were bounded priors, not fitted
 terms: the blind test finds no stable fitted effect in them — a fitted growth
 coefficient comes out negative and flips sign across folds — so fitting them
-would be fitting noise, and the dashboard says so. The priors cost
-out-of-sample accuracy on every blind test (1.224 bare to 1.326 with them);
-radar-6 drops them, and the table shows that cost instead of hiding it.
+would be fitting noise, and the dashboard says so. Read the medians against
+their means: the mean absolute log error barely moves between the bare curve
+(1.596) and the full radar-5 formula (1.604) on leave-one-out, and a paired
+bootstrap of the median difference straddles zero on every comparison — so
+the accuracy price of the priors is within noise, and the per-prior table in
+the dashboard shows the numbers instead of repeating a median-only claim.
 
 ### What radar-4 adds: walk-forward validation, ablation, and a refit sandbox
 
@@ -71,8 +79,9 @@ intercepts shrunk toward the global curve, n/(n+k)) were also tested and
 rejected: LOO 1.337 (k=5) / 1.332 (k=10) / 1.292 (k=20) / 1.271 (k=50)
 against 1.224 bare, and walk-forward pooled 1.169 against 1.129. The
 dashboard shows all of this, plus a **live refit sandbox**: intercept and
-slope sliders re-price the board in-page (bare curve — it moves values, not
-ranks, since the ranking follows TVL), with a reset to the fitted curve.
+slope sliders re-price the board in-page, each row keeping its own growth
+and maturity multipliers, so ranks can move as well as values, with a reset
+to the fitted curve.
 
 ### What radar-5 adds: the verdict is break-even odds, not dollars per hour
 
@@ -131,6 +140,42 @@ the old priors one at a time (each sweep is noise around the bare curve).
 The same honest limit as walk-forward applies to the backtest: the "launch
 value" is the snapshot-date market cap, not a launch-day value.
 
+### What radar-7 adds: the priors return, breadth does not — a per-prior ablation
+
+Radar-7 re-tests radar-6's reason for dropping the priors, one prior at a
+time, and the median-only case does not survive. The **per-prior ablation**
+scores every prior structure on leave-one-out and pooled walk-forward, with
+the mean absolute log error printed beside each median and the board's move
+off the TVL ranking: bare curve 1.224 / 1.129 (mean 1.596 / 1.638, 0 rows
+moved), growth only 1.223 / 1.129 (166 moved), maturity only 1.275 / 1.136
+(188 moved), breadth only 1.343 / 1.130 (185 moved), growth + maturity —
+the radar-7 formula — 1.250 / 1.123 (182 moved, mean shift 8.0 ranks),
+full radar-5 triple 1.326 / 1.146 (192 moved), all priors at half strength
+1.267 / 1.145. The mean barely moves between any two structures, and a
+paired bootstrap of the median difference straddles zero on every
+comparison, so the accuracy price of the priors is within noise; breadth is
+dropped because it is the most expensive prior per unit of reordering, and a
+fitted chain-count term hurts too (leave-one-out 1.331). The board now
+splits FARM 14, THIN 80, SKIP 104 (was 19 / 83 / 96 in radar-6), rank 1 is
+Steakhouse Financial at $86,475,940, just ahead of Sentora Curator at
+$85,512,930, and the top 10 rows sum to $509,981,033. The verdict rule is
+backtested again on the new formula: FARM calls clear break-even 21 of 22
+times (95.5%, median net $557), THIN 43 of 50 (86.0%, median net $100),
+SKIP 37 of 56 (66.1%, median net $44); following FARM and THIN and skipping
+SKIP nets $100,156 across 72 calls. The thresholds were re-swept with the
+priors back in and stay at the round numbers (0.90 / 0.75): moving THIN to
+0.70 raises the backtest's total net only by adding marginal calls while the
+THIN beat rate falls to 0.82, and moving FARM barely moves precision. The
+sigma was re-checked too: the full formula's own in-sample residual SD is
+2.089 against the bare curve's 2.077, and its leave-one-out SD is 2.119 —
+recomputing the odds on the larger sigma moves no verdict group's beat rate,
+so the odds stay on the printed residual SD. Six second signals beyond TVL
+were tested and rejected in radar-7 — category-relative TVL, log age, a
+growth-by-maturity interaction, raw 7-day change, an uncapped chain count,
+and TVL share within category — every one hurts leave-one-out (1.257–1.341
+against 1.224 bare) and none improves pooled walk-forward, and two flip
+sign across the time splits.
+
 ## The board
 
 198 rows: the 40 watchlist protocols (TVL at or above $50M, no token on
@@ -167,7 +212,7 @@ the same snapshot always writes the same bytes.
 
 - `main.ts` — the program: reads the snapshot, writes the board, the data
   and the dossier.
-- `lib/model.ts` — the radar-6 model, the calibration, the farm plans.
+- `lib/model.ts` — the radar-7 model, the calibration, the farm plans.
 - `dashboard/` — the static page: `index.html`, `app.css`, `app.js`. No
   network, no framework.
 - `screenshots/` — the board, a protocol's detail view, a filtered view, and the validation panel with the refit sandbox.

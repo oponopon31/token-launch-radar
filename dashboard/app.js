@@ -1,7 +1,5 @@
-/* TOKEN RADAR — renders window.RADAR with no network.
-   Model radar-6 (mirrors lib/model.ts): the size curve is fitted to the
-   snapshot's own live comparables, and every farm plan is netted against the
-   stated scenario. The implied value is recomputed per row from the snapshot
+/* TOKEN RADAR, model radar-7 (mirrors lib/model.ts). Renders window.RADAR
+   with no network; the implied value is recomputed per row from the snapshot
    figures and checked against the board's number. No protocol name is ever
    special-cased. */
 (function () {
@@ -236,19 +234,18 @@
     $('live-table').hidden = tab !== 'live';
     $('notlaunch-table').hidden = tab !== 'not';
     $('board-caption').textContent = tab === 'pre'
-      ? 'Pre-token protocols that could launch, strongest implied value first. Select a row for its model breakdown and farm plan.'
+      ? 'Pre-token protocols that could launch, strongest first. Select a row for its breakdown and farm plan.'
       : tab === 'live'
-        ? 'Live-token protocols, by market cap. They already trade, so they sit outside the ranking — and they are the comparables the size curve is fitted on.'
-        : 'Pre-token protocols that are not launches: a wrapped, staked or bridged product, an exchange, or a versioned pool. Listed with the reason, so all 758 protocols are accounted for.';
+        ? 'Live-token protocols, by market cap. They already trade — and they are the comparables the size curve is fitted on.'
+        : 'Pre-token protocols that are not launches, listed with the reason.';
     if (tab === 'pre') renderBoard(); else if (tab === 'live') renderLive(); else renderNotLaunches();
   }
   function renderModel() {
-    $('formula').textContent = (M.growth_weight === 0 && M.maturity_range === 0 && M.breadth_per_chain === 0)
-      ? 'implied = round( tvl_usd × exp(' + F.intercept.toFixed(4) + ' + (' + F.slope.toFixed(4) + ' − 1) × ln(tvl_usd)) ) — the bare size curve; the radar-5 multipliers are 1.'
-      : 'implied = round( tvl_usd × exp(' + F.intercept.toFixed(4) + ' + (' + F.slope.toFixed(4) + ' − 1) × ln(tvl_usd))' +
-      ' × (1 + ' + M.growth_weight + ' × tanh(clamp(change_7d, ' + M.growth_floor + ', ' + M.growth_cap + ') / ' + M.growth_scale + '))' +
-      ' × (' + M.maturity_floor + ' + ' + M.maturity_range + ' × (1 − exp(−age_days / ' + M.maturity_scale_days + ')))' +
-      ' × (1 + ' + M.breadth_per_chain + ' × min(max(chains − 1, 0), ' + M.breadth_max_chains + ')) )';
+    var s = 'implied = round( tvl_usd × exp(' + F.intercept.toFixed(4) + ' + (' + F.slope.toFixed(4) + ' − 1) × ln(tvl_usd))', n = 0;
+    if (M.growth_weight !== 0) { n++; s += ' × (1 + ' + M.growth_weight + ' × tanh(clamp(change_7d, ' + M.growth_floor + ', ' + M.growth_cap + ') / ' + M.growth_scale + '))'; }
+    if (M.maturity_range !== 0) { n++; s += ' × (' + M.maturity_floor + ' + ' + M.maturity_range + ' × (1 − exp(−age_days / ' + M.maturity_scale_days + ')))'; }
+    if (M.breadth_per_chain !== 0) { n++; s += ' × (1 + ' + M.breadth_per_chain + ' × min(max(chains − 1, 0), ' + M.breadth_max_chains + '))'; }
+    $('formula').textContent = n === 0 ? s + ' ) — the bare size curve; the radar-5 multipliers are 1.' : s + ' )';
     $('fit-line').textContent = 'log(market cap) = ' + F.intercept.toFixed(4) + ' + ' + F.slope.toFixed(4) + ' × log(TVL), fit on ' + F.n_comparables +
       ' live-token comparables. R² ' + F.r_squared + ', residual SD ' + F.residual_sd + ' in log space; the slope runs ' +
       F.slope_lo + ' to ' + F.slope_hi + ' across 200 bootstrap refits, always below 1 — a bigger protocol is worth fewer dollars per dollar of TVL.';
@@ -272,30 +269,49 @@
     $('wf-body').innerHTML = wf.splits.map(function (s) {
       return '<tr><td>' + esc(s.cutoff) + '</td><td>' + s.train_n + ' → ' + s.test_n + '</td><td>' +
         s.curve_median_log_error.toFixed(3) + '</td><td>' + (s.curve_within_2x * 100).toFixed(1) + '%</td><td>' +
-        s.full_median_log_error.toFixed(3) + '</td><td>' + s.shrunk_median_log_error.toFixed(3) + '</td></tr>';
+        s.full_median_log_error.toFixed(3) + '</td><td>' + s.r7_median_log_error.toFixed(3) + '</td><td>' +
+        s.shrunk_median_log_error.toFixed(3) + '</td></tr>';
     }).join('') +
       '<tr class="pooled"><td>Pooled</td><td>' + wf.dated_n + ' dated comparables, 101 test predictions over 51 distinct tokens</td><td>' +
       wf.pooled_curve_median_log_error.toFixed(3) + '</td><td>' + (wf.pooled_curve_within_2x * 100).toFixed(1) + '%</td><td>' +
-      wf.pooled_full_median_log_error.toFixed(3) + '</td><td>' + wf.pooled_shrunk_median_log_error.toFixed(3) + '</td></tr>';
+      wf.pooled_full_median_log_error.toFixed(3) + '</td><td>' + wf.pooled_r7_median_log_error.toFixed(3) + '</td><td>' +
+      wf.pooled_shrunk_median_log_error.toFixed(3) + '</td></tr>';
     $('ablation-body').innerHTML = D.validation.ablation.map(function (a) {
       return '<tr><td>' + esc(a.terms) + '</td><td>' + a.loo_median_log_error.toFixed(3) + '</td><td>' +
         (a.loo_within_2x * 100).toFixed(1) + '%</td><td>' + a.wf_pooled_median_log_error.toFixed(3) + '</td><td>' +
         (a.wf_pooled_within_2x * 100).toFixed(1) + '%</td></tr>';
     }).join('');
     var sh = D.validation.shrunk_loo;
-    $('shrunk-line').textContent = 'Category intercepts shrunk toward the global curve were tested at four strengths and hurt at every one: leave-one-out median log error ' +
+    $('shrunk-line').textContent = 'Shrunk category intercepts hurt at every strength: leave-one-out ' +
       sh.map(function (r) { return 'k=' + r.k + ' ' + r.loo_median_log_error.toFixed(3); }).join(', ') +
-      ' against ' + bare.median_log_error.toFixed(3) + ' for the bare curve, and walk-forward pooled ' +
+      ' against ' + bare.median_log_error.toFixed(3) + ' bare, walk-forward pooled ' +
       wf.pooled_shrunk_median_log_error.toFixed(3) + ' against ' + wf.pooled_curve_median_log_error.toFixed(3) +
-      ' — the category means are mostly noise next to a residual standard deviation above 2 in log space — so the board uses no category shift.';
+      ' — the category means are mostly noise next to a residual SD above 2 — so the board uses no category shift.';
+    var pa = D.validation.prior_ablation;
+    $('prior-body').innerHTML = pa.map(function (a) {
+      return '<tr><td>' + esc(a.structure) + '</td><td>' + a.loo_median_log_error.toFixed(3) + ' (' + a.loo_mean_abs_log_error.toFixed(3) + ')</td><td>' +
+        a.wf_pooled_median_log_error.toFixed(3) + ' (' + a.wf_pooled_mean_abs_log_error.toFixed(3) + ')</td><td>' +
+        (a.wf_pooled_within_2x * 100).toFixed(1) + '%</td><td>' + a.mean_abs_rank_shift.toFixed(1) + '</td><td>' + a.rows_moved + '</td></tr>';
+    }).join('');
+    var paByName = {};
+    pa.forEach(function (a) { paByName[a.structure] = a; });
+    var paBare = paByName['Bare curve (radar-6)'], paFull = paByName['Growth + maturity + breadth (radar-5)'], paR7 = paByName['Growth + maturity (radar-7)'];
+    $('prior-line').textContent = 'Read the medians against their means: bare vs full radar-5 differs by ' +
+      (paFull.loo_median_log_error - paBare.loo_median_log_error).toFixed(3) + ' on the leave-one-out median but only ' +
+      (paFull.loo_mean_abs_log_error - paBare.loo_mean_abs_log_error).toFixed(3) + ' on the mean, and by ' +
+      (paFull.wf_pooled_median_log_error - paBare.wf_pooled_median_log_error).toFixed(3) + ' on pooled walk-forward but only ' +
+      (paFull.wf_pooled_mean_abs_log_error - paBare.wf_pooled_mean_abs_log_error).toFixed(3) + ' on its mean — a paired bootstrap straddles zero on every comparison. What the priors buy is not noise: radar-7 moves ' +
+      paR7.rows_moved + ' of 198 rows off their TVL rank, against 0 for the bare curve, and its pooled walk-forward median (' +
+      paR7.wf_pooled_median_log_error.toFixed(3) + ') beats the bare curve (' + paBare.wf_pooled_median_log_error.toFixed(3) +
+      ') and the full formula (' + paFull.wf_pooled_median_log_error.toFixed(3) + ').';
     var bt = D.validation.verdict_backtest;
     $('backtest-body').innerHTML = bt.groups.map(function (g) {
       return '<tr><td>' + esc(g.verdict) + '</td><td>' + g.n + '</td><td>' + (g.beat_rate * 100).toFixed(1) + '%</td><td>' +
         usd(g.mean_net_usd) + '</td><td>' + usd(g.median_net_usd) + '</td><td>' + usd(g.total_net_usd) + '</td></tr>';
     }).join('');
-    $('calibration-line').textContent = 'The odds are calibrated: ' + bt.calibration.map(function (b) {
-      return 'comparables quoted ' + Math.round(b.odds_lo * 100) + '–' + Math.round(b.odds_hi * 100) + '% odds (' + b.n + ' calls) clear break-even ' +
-        (b.actual_beat_rate * 100).toFixed(0) + '% of the time, against ' + (b.mean_odds * 100).toFixed(0) + '% quoted';
+    $('calibration-line').textContent = 'Calibrated odds: ' + bt.calibration.map(function (b) {
+      return 'quoted ' + Math.round(b.odds_lo * 100) + '–' + Math.round(b.odds_hi * 100) + '% (' + b.n + ' calls) clear break-even ' +
+        (b.actual_beat_rate * 100).toFixed(0) + '%, against ' + (b.mean_odds * 100).toFixed(0) + '% quoted';
     }).join('; ') + '.';
     initSandbox();
   }
@@ -316,7 +332,7 @@
     }).join('');
     var isFitted = Math.abs(intercept - F.intercept) < 0.0005 && Math.abs(slope - F.slope) < 0.0005;
     $('sb-summary').textContent = isFitted
-      ? 'At the fitted curve the sandbox matches the board exactly: rank 1 is ' + top[0].r.name + ' at ' + fmtUsd(top[0].implied) + '.'
+      ? 'At the fitted curve the sandbox matches the board: rank 1 is ' + top[0].r.name + ' at ' + fmtUsd(top[0].implied) + '.'
       : changed + ' of ' + D.rows.length + ' rows change rank under your curve; rank 1 is ' + top[0].r.name + ' at ' + fmtUsd(top[0].implied) + '.';
   }
   function initSandbox() {
