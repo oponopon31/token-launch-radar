@@ -1,5 +1,5 @@
 /* TOKEN RADAR — renders window.RADAR with no network.
-   Model radar-5 (mirrors lib/model.ts): the size curve is fitted to the
+   Model radar-6 (mirrors lib/model.ts): the size curve is fitted to the
    snapshot's own live comparables, and every farm plan is netted against the
    stated scenario. The implied value is recomputed per row from the snapshot
    figures and checked against the board's number. No protocol name is ever
@@ -13,7 +13,6 @@
   var state = { q: '', category: 'all', tab: 'pre', sort: 'implied', dir: -1, selected: null };
   var $ = function (id) { return document.getElementById(id); };
 
-  /* ---------- formatting ---------- */
   var usd0 = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
   function fmtUsd(n) {
     if (n === null || n === undefined || !isFinite(n)) return 'n/a';
@@ -38,8 +37,7 @@
   function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function chainsShort(ch) { return ch && ch.length ? esc(ch.slice(0, 2).join(', ') + (ch.length > 2 ? ' +' + (ch.length - 2) : '')) : '—'; }
 
-  /* ---------- model radar-4 ---------- */
-  function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
+    function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
   function sizeMultiple(tvl, fit) { fit = fit || F; return Math.exp(fit.intercept + (fit.slope - 1) * Math.log(tvl)); }
   function impliedOf(r, fit) {
     fit = fit || F;
@@ -53,8 +51,7 @@
       multiple: multiple, growthPct: growth, growthMult: growthMult, maturity: maturity, breadth: breadth, age: age };
   }
 
-  /* ---------- farm plan (mirrors lib/model.ts farmPlan) ---------- */
-  function chainOf(p) { return p.chains && p.chains.length ? p.chains[0] : 'its main chain'; }
+    function chainOf(p) { return p.chains && p.chains.length ? p.chains[0] : 'its main chain'; }
   function capitalFor(p) {
     if (p.tvl_usd >= 5e9) return 250;
     if (p.tvl_usd >= 1e9) return 150;
@@ -109,8 +106,7 @@
     return { capital: capital, hold: hold, weeks: weeks, setupGas: setupGas, totalCost: totalCost, hours: hours,
       expectedShare: expectedShare, net: net, perHour: perHour, breakeven: breakeven, odds: odds, verdict: verdict };
   }
-  /* Standard normal CDF, Abramowitz-Stegun 7.1.26 — same formula as lib/model.ts. */
-  function normCdf(z) {
+    function normCdf(z) {
     var t = 1 / (1 + 0.2316419 * Math.abs(z));
     var poly = t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
     var cdf = 1 - Math.exp(-(z * z) / 2) / Math.sqrt(2 * Math.PI) * poly;
@@ -137,8 +133,7 @@
     ].map(stepText);
   }
 
-  /* ---------- hash deep links ---------- */
-  function readHash() {
+    function readHash() {
     var h = window.location.hash.replace(/^#/, '');
     if (!h) return;
     var p = new URLSearchParams(h);
@@ -155,8 +150,7 @@
     window.history.replaceState(null, '', s ? '#' + s : window.location.pathname + window.location.search);
   }
 
-  /* ---------- filtering / sorting ---------- */
-  function matchRow(r, q) {
+    function matchRow(r, q) {
     if (state.category !== 'all' && (r.category || 'Other') !== state.category) return false;
     if (!q) return true;
     return [r.name, r.slug, r.category, (r.chains || []).join(' ')].join(' ').toLowerCase().indexOf(q) >= 0;
@@ -182,7 +176,6 @@
     });
   }
 
-  /* ---------- rendering ---------- */
   function verdictBadge(v) { return '<span class="verdict ' + v.toLowerCase() + '">' + v + '</span>'; }
   function rowHtml(r, max) {
     var g = r.change_7d, gc = g === null ? '' : (g >= 0 ? 'pos' : 'neg');
@@ -250,7 +243,9 @@
     if (tab === 'pre') renderBoard(); else if (tab === 'live') renderLive(); else renderNotLaunches();
   }
   function renderModel() {
-    $('formula').textContent = 'implied = round( tvl_usd × exp(' + F.intercept.toFixed(4) + ' + (' + F.slope.toFixed(4) + ' − 1) × ln(tvl_usd))' +
+    $('formula').textContent = (M.growth_weight === 0 && M.maturity_range === 0 && M.breadth_per_chain === 0)
+      ? 'implied = round( tvl_usd × exp(' + F.intercept.toFixed(4) + ' + (' + F.slope.toFixed(4) + ' − 1) × ln(tvl_usd)) ) — the bare size curve; the radar-5 multipliers are 1.'
+      : 'implied = round( tvl_usd × exp(' + F.intercept.toFixed(4) + ' + (' + F.slope.toFixed(4) + ' − 1) × ln(tvl_usd))' +
       ' × (1 + ' + M.growth_weight + ' × tanh(clamp(change_7d, ' + M.growth_floor + ', ' + M.growth_cap + ') / ' + M.growth_scale + '))' +
       ' × (' + M.maturity_floor + ' + ' + M.maturity_range + ' × (1 − exp(−age_days / ' + M.maturity_scale_days + ')))' +
       ' × (1 + ' + M.breadth_per_chain + ' × min(max(chains − 1, 0), ' + M.breadth_max_chains + ')) )';
@@ -271,8 +266,7 @@
     }).join('');
   }
 
-  /* ---------- walk-forward, ablation, shrunk shifts, sandbox ---------- */
-  function renderValidation() {
+    function renderValidation() {
     var wf = D.validation.walkforward;
     var bare = D.validation.loo[2];
     $('wf-body').innerHTML = wf.splits.map(function (s) {
@@ -294,6 +288,15 @@
       ' against ' + bare.median_log_error.toFixed(3) + ' for the bare curve, and walk-forward pooled ' +
       wf.pooled_shrunk_median_log_error.toFixed(3) + ' against ' + wf.pooled_curve_median_log_error.toFixed(3) +
       ' — the category means are mostly noise next to a residual standard deviation above 2 in log space — so the board uses no category shift.';
+    var bt = D.validation.verdict_backtest;
+    $('backtest-body').innerHTML = bt.groups.map(function (g) {
+      return '<tr><td>' + esc(g.verdict) + '</td><td>' + g.n + '</td><td>' + (g.beat_rate * 100).toFixed(1) + '%</td><td>' +
+        usd(g.mean_net_usd) + '</td><td>' + usd(g.median_net_usd) + '</td><td>' + usd(g.total_net_usd) + '</td></tr>';
+    }).join('');
+    $('calibration-line').textContent = 'The odds are calibrated: ' + bt.calibration.map(function (b) {
+      return 'comparables quoted ' + Math.round(b.odds_lo * 100) + '–' + Math.round(b.odds_hi * 100) + '% odds (' + b.n + ' calls) clear break-even ' +
+        (b.actual_beat_rate * 100).toFixed(0) + '% of the time, against ' + (b.mean_odds * 100).toFixed(0) + '% quoted';
+    }).join('; ') + '.';
     initSandbox();
   }
   function renderSandbox() {
@@ -329,8 +332,7 @@
     renderSandbox();
   }
 
-  /* ---------- detail dialog ---------- */
-  var dialog = $('detail');
+    var dialog = $('detail');
   function openDetail(slug) {
     var r = D.rows.filter(function (x) { return x.slug === slug; })[0];
     if (!r) return;
@@ -388,8 +390,7 @@
   });
   dialog.addEventListener('click', function (e) { if (e.target === dialog) dialog.close(); });
 
-  /* ---------- wire up ---------- */
-  function init() {
+    function init() {
     $('meta-date').textContent = D.as_of;
     $('foot-date').textContent = D.as_of;
     $('stat-watch').textContent = D.watchlist_size + ' / ' + D.watchlist_size;

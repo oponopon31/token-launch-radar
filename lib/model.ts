@@ -1,5 +1,6 @@
-// The token radar's model, version radar-5: a fitted comparables model,
-// walk-forward validated, with a break-even-odds verdict rule.
+// The token radar's model, version radar-6: a fitted comparables model,
+// walk-forward validated, with a break-even-odds verdict rule — and, new
+// in radar-6, a verdict backtest and a calibration check on that rule.
 //
 // The board ranks every pre-token protocol that could launch — the 40 on the
 // snapshot's watchlist plus every rankable protocol below the floor — and
@@ -20,9 +21,21 @@
 // cross-validation, and — new in radar-4 — walk-forward validation: the
 // curve is fit on listings before a cutoff and tested on listings after it,
 // at three cutoffs, so the test never sees the training listings' dates.
-// The full formulas are scored too, so the table shows that the bounded
-// priors cost a little out-of-sample accuracy (1.224 bare to 1.326 with
-// them) instead of hiding it.
+// The full formulas are scored too, so the table shows what the old
+// radar-5 formula (size curve plus the bounded growth/maturity/breadth
+// priors) costs against the bare curve instead of hiding it.
+//
+// Radar-6 drops those priors: the bare curve beats the full radar-5
+// formula on every blind test — leave-one-out, 5-fold cross-validation
+// and pooled walk-forward — so the board now prices every row with the
+// bare curve alone, and the radar-5 formula survives only in the
+// validation tables as the comparison. The growth, maturity and breadth
+// multipliers are still computed, but their radar-6 weights are zero, so
+// each one is exactly 1 and the dashboard's recomputation — which reads
+// the same constants — still agrees with the board to the dollar.
+//
+//   multiple     = exp(intercept + (slope - 1) * ln(tvl_usd))
+//   implied      = max(1, round(tvl_usd x multiple))
 //
 // Two candidate improvements were tested in radar-4 and REJECTED, and the
 // dashboard says so with their numbers: fitted growth/maturity/breadth
@@ -30,17 +43,14 @@
 // across time splits — fitting them would be fitting noise), and shrunk
 // category shifts (empirical-Bayes partial pooling toward the global curve
 // hurts leave-one-out at every shrinkage strength and hurts every
-// walk-forward split). The board therefore still prices every row with the
-// radar-3 curve and the same bounded priors; radar-4's change is the
-// validation behind it, the ablation table that proves the rejections, and
-// a live refit sandbox on the dashboard.
-//
-//   multiple     = exp(intercept + (slope - 1) * ln(tvl_usd))
-//   growth       = clamp(change_7d, -80, 300) per cent
-//   growthMult   = 1 + 0.35 x tanh(growth / 60)          (bounded, dampened)
-//   maturity     = 0.75 + 0.35 x (1 - exp(-age_days / 540))
-//   breadth      = 1 + 0.04 x min(chains - 1, 5)
-//   implied      = max(1, round(tvl_usd x multiple x growthMult x maturity x breadth))
+// walk-forward split). Radar-6 adds two more rejections, with the same
+// standard: a quadratic log(TVL) term (leave-one-out ties the bare curve,
+// 5-fold loses to it, and its coefficients swing wildly across the
+// walk-forward training sets while adding nothing in-sample — R-squared
+// is unchanged to three decimals — so its walk-forward pooled gain is
+// not trusted) and re-weighting the old priors one at a time (each
+// single-weight sweep is noise around the bare curve; the only weight
+// set that wins on all three tests is all weights zero).
 //
 // Every farm plan is netted, not just listed: the plan totals its cash cost
 // (gas for the first transaction, the setup and a weekly action over the hold),
@@ -69,6 +79,31 @@
 //                       curve's own residual SD in log space.
 //
 //   FARM when odds >= 0.90, THIN when 0.75 <= odds < 0.90, SKIP otherwise.
+//
+// Radar-6 backtests the verdict rule itself, out of sample: each of the
+// 128 comparables is priced by a curve fit without it, given the farm plan
+// its own TVL and age would have earned, and asked whether its actual
+// market cap clears its break-even value. FARM calls clear it 23 of 25
+// times, THIN 45 of 51, SKIP 33 of 52 — and the median net under the
+// stated scenario orders the same way, $467 for FARM, $109 for THIN,
+// $37 for SKIP — so the verdicts separate the calls that pay from the
+// ones that mostly do not, instead of merely relabelling the point
+// estimate. The odds are also calibrated: comparables quoted 50–75%
+// odds clear break-even 64% of the time (69% quoted), 75–90% quoted
+// clear it 88% (82% quoted), 90–95% quoted clear it 92% (93% quoted),
+// above 95% quoted clear it 92% (97% quoted). The same honest limit
+// applies as to the walk-forward test: the "launch value" in the
+// backtest is the snapshot-date market cap, not a launch-day value, and
+// the verdicts still condition on the token launching at all.
+//
+// One consequence of dropping the priors, stated plainly: with them
+// gone, implied value is a strictly increasing function of TVL alone
+// (TVL to the power of the fitted slope, 0.52), so the board's ranking
+// is the TVL ranking and every row holds the same rank across all 200
+// bootstrap refits. The curve's work is now the dollar value and the
+// verdict — which still vary by age and cost, not by TVL alone — not
+// an ordering the blind test could not justify. The refit sandbox
+// likewise moves values, not ranks, under the bare curve.
 //
 // In plain terms: FARM means the launch value covers the gas cost in at
 // least 9 of 10 draws from the model's own error distribution — the launch
@@ -158,15 +193,20 @@ export interface ModelConstants {
 }
 
 export const MODEL: ModelConstants = {
-  growth_weight: 0.35,
+  // Radar-6: the priors are dropped — every blind test says they cost
+  // accuracy — so their weights are zero and each multiplier is exactly 1.
+  // The fields stay so the dashboard's recomputation reads the same
+  // constants and agrees with the board; the radar-5 weights live in
+  // RADAR5_MODEL below, used only by the validation comparison.
+  growth_weight: 0,
   growth_floor: -80,
   growth_cap: 300,
   growth_scale: 60,
-  maturity_floor: 0.75,
-  maturity_range: 0.35,
+  maturity_floor: 1,
+  maturity_range: 0,
   maturity_scale_days: 540,
   unknown_age_days: 365,
-  breadth_per_chain: 0.04,
+  breadth_per_chain: 0,
   breadth_max_chains: 5,
   scenario_airdrop_share: 0.05,
   scenario_farmers: 5000,
@@ -179,8 +219,19 @@ export const MODEL: ModelConstants = {
   bootstrap_refits: 200,
 };
 
+/** The radar-5 constants, kept only so the validation tables can score
+ *  the old formula (size curve plus bounded priors) against radar-6's
+ *  bare curve on the same tests. Nothing on the board uses them. */
+export const RADAR5_MODEL: ModelConstants = {
+  ...MODEL,
+  growth_weight: 0.35,
+  maturity_floor: 0.75,
+  maturity_range: 0.35,
+  breadth_per_chain: 0.04,
+};
+
 /** The model's version label: the dashboard names it. */
-export const MODEL_VERSION = 'radar-5';
+export const MODEL_VERSION = 'radar-6';
 
 /** One row of the calibration table the dashboard prints. */
 export interface CategoryMultiple {
@@ -230,6 +281,44 @@ export interface Validation {
   walkforward: WalkForward;
   ablation: AblationRow[];
   shrunk_loo: ShrunkRow[];
+  verdict_backtest: VerdictBacktest;
+}
+
+/** One verdict group's out-of-sample record in the verdict backtest. */
+export interface VerdictBacktestRow {
+  verdict: 'FARM' | 'THIN' | 'SKIP';
+  n: number;
+  /** Share of the group's comparables whose actual market cap clears the break-even value. */
+  beat_rate: number;
+  mean_net_usd: number;
+  median_net_usd: number;
+  total_net_usd: number;
+  /** Mean log(actual market cap / break-even value) for the group. */
+  mean_log_return: number;
+}
+
+/** One calibration bin: the odds the rule quoted against the share that actually cleared break-even. */
+export interface CalibrationBin {
+  odds_lo: number;
+  odds_hi: number;
+  n: number;
+  mean_odds: number;
+  actual_beat_rate: number;
+}
+
+/** The verdict rule backtested out of sample: every comparable priced by
+ *  a curve fit without it, given the farm plan its own TVL and age would
+ *  have earned, and checked against its actual market cap. The same
+ *  honest limit as the walk-forward test applies: the "launch value" is
+ *  the snapshot-date market cap, not a launch-day value. */
+export interface VerdictBacktest {
+  n: number;
+  groups: VerdictBacktestRow[];
+  /** Total net of following FARM and THIN and skipping SKIP, under the stated scenario. */
+  farm_thin_total_net_usd: number;
+  /** Total net of farming every comparable, for comparison. */
+  all_total_net_usd: number;
+  calibration: CalibrationBin[];
 }
 
 /** One walk-forward split: fit before the cutoff, test after it. */
@@ -516,7 +605,11 @@ export function calibrate(snapshot: Snapshot, model: ModelConstants = MODEL): Ca
   return { global_multiple: round4(global), table };
 }
 
-/** The four multipliers and the implied value one protocol gets. */
+/** The four multipliers and the implied value one protocol gets. In
+ *  radar-6 the growth, maturity and breadth weights are zero, so the
+ *  multipliers are exactly 1 and the implied value is the bare size
+ *  curve; the multipliers are still computed — from the same constants
+ *  the dashboard reads — so the detail view's recomputation agrees. */
 export function impliedValue(
   protocol: SnapshotProtocol,
   asOf: string,
@@ -569,10 +662,11 @@ function bySlug(protocols: SnapshotProtocol[]): Map<string, SnapshotProtocol> {
 
 /** Leave-one-out over the comparables for five ways of pricing a held-out token:
  *  the three multiples bare (flat, category median, size curve), then the two
- *  full formulas the boards actually use (each multiple plus the same bounded
- *  growth/maturity/breadth priors). The priors cost a little out-of-sample
- *  accuracy — the curve goes from 1.224 bare to 1.326 with them — and the
- *  table shows that instead of hiding it. */
+ *  full formulas the boards actually used (each multiple plus the radar-5
+ *  bounded growth/maturity/breadth priors). Radar-6's board formula is the
+ *  bare size curve — row three — because the priors cost out-of-sample
+ *  accuracy on every blind test; the radar-5 full formula is kept as row
+ *  four so the table shows that cost instead of hiding it. */
 export function looValidation(comps: SnapshotProtocol[], asOf: string): ValidationRow[] {
   const flatErrs: number[] = [];
   const catErrs: number[] = [];
@@ -601,9 +695,10 @@ export function looValidation(comps: SnapshotProtocol[], asOf: string): Validati
     flatErrs.push(Math.abs(Math.log(held.tvl_usd * globalMed) - actual));
     catErrs.push(Math.abs(Math.log(held.tvl_usd * catMult) - actual));
     curveErrs.push(Math.abs(Math.log(Math.exp(fit.intercept + fit.slope * Math.log(held.tvl_usd))) - actual));
-    // The full formulas: the held protocol's own growth/age/chains are inputs,
+    // The full formulas: the radar-5 priors, scored against radar-6's
+    // bare curve. The held protocol's own growth/age/chains are inputs,
     // not the target, so using them is not a leak.
-    const v = impliedValue(held, asOf, fit);
+    const v = impliedValue(held, asOf, fit, RADAR5_MODEL);
     full3Errs.push(Math.abs(Math.log(v.implied) - actual));
     const implied2 = Math.max(1, Math.round(held.tvl_usd * catMult * v.growthMult * v.maturityMult * v.breadthMult));
     full2Errs.push(Math.abs(Math.log(implied2) - actual));
@@ -621,11 +716,11 @@ export function looValidation(comps: SnapshotProtocol[], asOf: string): Validati
   const cat = score(catErrs);
   cat.method = 'Category-median multiple (radar-2)';
   const curve = score(curveErrs);
-  curve.method = 'Fitted size curve (radar-4)';
+  curve.method = 'Fitted size curve, bare (radar-6 board formula)';
   const full2 = score(full2Errs);
   full2.method = 'Full radar-2 formula (category median + priors)';
   const full3 = score(full3Errs);
-  full3.method = 'Full radar-4 formula (size curve + priors)';
+  full3.method = 'Full radar-5 formula (size curve + priors)';
   return [flat, cat, curve, full2, full3];
 }
 
@@ -796,7 +891,9 @@ export function walkForwardValidation(comps: SnapshotProtocol[], asOf: string): 
       const actual = Math.log(p.mcap_usd!);
       const base = fit.intercept + fit.slope * Math.log(p.tvl_usd);
       curveErrs.push(base - actual);
-      const v = impliedValue(p, asOf, fit);
+      // The "full" column is the radar-5 formula (curve plus bounded
+      // priors), scored against radar-6's bare curve on the same splits.
+      const v = impliedValue(p, asOf, fit, RADAR5_MODEL);
       fullErrs.push(Math.log(v.implied) - actual);
       shrunkErrs.push(base + (shifts.get(p.category ?? 'Other') ?? 0) - actual);
     }
@@ -894,6 +991,82 @@ export function shrunkValidation(comps: SnapshotProtocol[], _asOf: string): Shru
     const score = scoreErrors(errs);
     return { k, loo_median_log_error: score.median_log_error, loo_within_2x: score.within_2x };
   });
+}
+
+/** The verdict rule backtested out of sample: each comparable is priced
+ *  by a curve fit without it, given the farm plan its own TVL and age
+ *  would have earned, and checked against its actual market cap — did
+ *  the launch value clear the break-even value, and what would the farm
+ *  have netted under the stated scenario (5% of the launch value split
+ *  among 5,000 farmers)? The odds quoted are the plan's own
+ *  break-even odds, so the calibration bins compare what the rule said
+ *  against what happened. Honest limit, stated on the dashboard too:
+ *  the "launch value" is the snapshot-date market cap, not a
+ *  launch-day value, and the verdicts condition on the token launching
+ *  at all. */
+export function verdictBacktestValidation(
+  comps: SnapshotProtocol[],
+  asOf: string,
+  residualSd: number,
+  model: ModelConstants = MODEL,
+): VerdictBacktest {
+  const records: { verdict: 'FARM' | 'THIN' | 'SKIP'; odds: number; beat: boolean; net: number; logret: number }[] = [];
+  for (let i = 0; i < comps.length; i++) {
+    const held = comps[i]!;
+    const rest = comps.filter((_, j) => j !== i);
+    const fit = fitSizeCurve(rest);
+    const v = impliedValue(held, asOf, fit, model);
+    const plan = farmPlan(held, v.age, v.implied, model, residualSd);
+    const breakevenValue = plan.netting.total_cost_usd / (model.scenario_airdrop_share / model.scenario_farmers);
+    const actual = held.mcap_usd!;
+    records.push({
+      verdict: plan.netting.verdict,
+      odds: plan.netting.breakeven_odds,
+      beat: actual >= breakevenValue,
+      net: (actual * model.scenario_airdrop_share) / model.scenario_farmers - plan.netting.total_cost_usd,
+      logret: Math.log(actual / breakevenValue),
+    });
+  }
+  const group = (verdict: 'FARM' | 'THIN' | 'SKIP'): VerdictBacktestRow => {
+    const g = records.filter((r) => r.verdict === verdict);
+    const nets = g.map((r) => r.net);
+    return {
+      verdict,
+      n: g.length,
+      beat_rate: g.length > 0 ? round3(g.filter((r) => r.beat).length / g.length) : 0,
+      mean_net_usd: Math.round(nets.reduce((a, b) => a + b, 0) / Math.max(g.length, 1)),
+      median_net_usd: Math.round(g.length > 0 ? median(nets) : 0),
+      total_net_usd: Math.round(nets.reduce((a, b) => a + b, 0)),
+      mean_log_return: round3(g.length > 0 ? g.reduce((a, r) => a + r.logret, 0) / g.length : 0),
+    };
+  };
+  const bins: [number, number][] = [
+    [0, 0.5],
+    [0.5, 0.75],
+    [0.75, 0.9],
+    [0.9, 0.95],
+    [0.95, 1.01],
+  ];
+  const calibration: CalibrationBin[] = bins
+    .map(([lo, hi]) => {
+      const g = records.filter((r) => r.odds >= lo && r.odds < hi);
+      return {
+        odds_lo: lo,
+        odds_hi: hi === 1.01 ? 1 : hi,
+        n: g.length,
+        mean_odds: round3(g.length > 0 ? g.reduce((a, r) => a + r.odds, 0) / g.length : 0),
+        actual_beat_rate: round3(g.length > 0 ? g.filter((r) => r.beat).length / g.length : 0),
+      };
+    })
+    .filter((b) => b.n > 0);
+  const farmThin = records.filter((r) => r.verdict !== 'SKIP');
+  return {
+    n: records.length,
+    groups: [group('FARM'), group('THIN'), group('SKIP')],
+    farm_thin_total_net_usd: Math.round(farmThin.reduce((a, r) => a + r.net, 0)),
+    all_total_net_usd: Math.round(records.reduce((a, r) => a + r.net, 0)),
+    calibration,
+  };
 }
 
 /** The size curve's fit diagnostics, including a bootstrap interval for the slope. */
@@ -1310,6 +1483,7 @@ export function buildRadar(snapshot: Snapshot, model: ModelConstants = MODEL): {
     walkforward,
     ablation: ablationValidation(comps, snapshot.as_of, walkforward),
     shrunk_loo: shrunkValidation(comps, snapshot.as_of),
+    verdict_backtest: verdictBacktestValidation(comps, snapshot.as_of, diagnostics.residual_sd, model),
   };
   const calibration = calibrate(snapshot, model);
   const candidates = snapshot.protocols.filter((p) => {
